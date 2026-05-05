@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Clipt
 
-## Getting Started
+Clipt is a content-clipping platform where streamers, fans, clippers, and brands all share in the value of every clip. Paste a Twitch / YouTube / Kick URL (or detect a live moment in real time) and Clipt produces a vertical, captioned, cryptographically attributed short — ready to post to TikTok, Reels, and YouTube Shorts. Earnings flow back to the original creator on every play.
 
-First, run the development server:
+## How to develop
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev          # http://localhost:3000
+pnpm lint         # ESLint
+pnpm typecheck    # tsc --noEmit
+pnpm format       # Prettier (write)
+pnpm format:check # Prettier (check)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copy `.env.example` to `.env.local` and fill in keys as features come online.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework**: Next.js 15 (App Router) + TypeScript (strict)
+- **Styling**: Tailwind CSS v3 + shadcn/ui (neutral base)
+- **Lint/Format**: ESLint (flat config) + Prettier
+- **Package manager**: pnpm
+- **Import alias**: `@/*` → `src/*`
 
-## Learn More
+Backend / infra (wired in later prompts):
 
-To learn more about Next.js, take a look at the following resources:
+- Supabase (Postgres + Auth + Storage + Realtime)
+- Inngest (background jobs)
+- Cloudflare R2 (object storage)
+- Fly.io (Python video workers — ffmpeg + Whisper + MediaPipe)
+- Stripe (subscriptions + Connect)
+- Vercel (web hosting)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Repo layout
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/                 routes (App Router)
+  components/
+    ui/               shadcn primitives
+    shared/           project-shared components (Logo, Nav, Footer, ThemeToggle)
+  features/            feature-scoped modules ({components, server, client, schema, types})
+  lib/                 utilities and clients
+  types/               shared TypeScript types
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The Clipt prompt pack (the source-of-truth playbook for every feature increment) lives in `_prompt-pack/`.
