@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"c:/Users/mitch/Desktop/clipt/_prompt-pack\")",
+      "Bash(mv \"c:/Users/mitch/Desktop/clipt/CLIPT_~1.MD\" \"c:/Users/mitch/Desktop/clipt/_prompt-pack/CLIPT_PROMPT_PACK.md\")",
+      "Bash(mv \"c:/Users/mitch/Desktop/clipt/CLIPT_~2.DOC\" \"c:/Users/mitch/Desktop/clipt/_prompt-pack/CLIPT.doc\")"
+    ]
+  }
+}
