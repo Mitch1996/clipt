@@ -123,6 +123,29 @@ A debug page at `/dev/inngest` triggers `clip/requested` against a
 freshly-inserted dummy clip so you can confirm the wiring without
 running through the full pipeline.
 
+### Object storage
+
+- All clip artifacts live in **one private bucket** (`clipt-media`),
+  accessed through `src/lib/storage/r2.ts`. The facade is named after
+  Cloudflare R2 (the eventual prod backend); it currently writes to
+  Supabase Storage during dev because R2 requires a credit card on
+  Cloudflare. The swap is one file when the time comes.
+- **Bucket layout** (`StorageKeys` in `r2.ts` is the single source of truth):
+  | Path | Contents |
+  | --- | --- |
+  | `sources/{clipId}.{ext}` | original Twitch / YouTube / Kick mp4 |
+  | `verticals/{clipId}.mp4` | 9:16 reframed export with burned captions |
+  | `thumbnails/{clipId}.jpg` | poster frame |
+  | `captions/{clipId}.json` | word-timed captions |
+- Server-side writes use the service-role admin client (bypasses RLS)
+  via `putObject(key, body, contentType)`.
+- All reads should use `getSignedDownloadUrl(key, expiresInSec)` — never
+  expose direct keys to the client. The 1-hour default TTL is right for
+  most product flows; extend it (up to 7 days) for embeddable links.
+- `getSignedUploadUrl(...)` is for client-direct uploads (Phase 3 mobile
+  capture). Server actions and Inngest functions should prefer
+  `putObject` so they don't pay the round-trip.
+
 ### Tests
 
 - **Unit / integration**: Vitest. Files live next to the code as

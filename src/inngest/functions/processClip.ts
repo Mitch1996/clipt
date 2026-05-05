@@ -1,3 +1,4 @@
+import { downloadSource } from "@/features/clips/server/downloadSource";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { ClipRequested, inngest } from "../client";
@@ -51,8 +52,24 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 3. TODO Prompt 1.7 — download source video
-    await step.run("todo-download-source", async () => ({ ok: true }));
+    // 3. Download source video (stub today, real downloader in Prompt 1.7).
+    //    Writes a placeholder buffer to sources/{clipId}.mp4 so the storage
+    //    facade is exercised end-to-end. The real downloader returns the
+    //    same shape and persists into the same key.
+    const downloaded = await step.run("download-source", () =>
+      downloadSource(clipId, clip.source_url ?? ""),
+    );
+
+    await step.run("persist-source-meta", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({
+          video_r2_key: downloaded.videoR2Key,
+          duration_seconds: downloaded.durationSeconds ?? null,
+        })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
 
     // 4. TODO Prompt 1.9 — transcribe via worker
     await step.run("todo-transcribe", async () => ({ ok: true }));
