@@ -181,10 +181,13 @@ export type Database = {
           id: string
           processing_error: string | null
           source_channel_id: string | null
+          source_codec: string | null
           source_creator_profile_id: string | null
+          source_height: number | null
           source_kind: string | null
           source_platform: string | null
           source_url: string | null
+          source_width: number | null
           status: string
           title: string | null
           updated_at: string
@@ -202,10 +205,13 @@ export type Database = {
           id?: string
           processing_error?: string | null
           source_channel_id?: string | null
+          source_codec?: string | null
           source_creator_profile_id?: string | null
+          source_height?: number | null
           source_kind?: string | null
           source_platform?: string | null
           source_url?: string | null
+          source_width?: number | null
           status?: string
           title?: string | null
           updated_at?: string
@@ -223,10 +229,13 @@ export type Database = {
           id?: string
           processing_error?: string | null
           source_channel_id?: string | null
+          source_codec?: string | null
           source_creator_profile_id?: string | null
+          source_height?: number | null
           source_kind?: string | null
           source_platform?: string | null
           source_url?: string | null
+          source_width?: number | null
           status?: string
           title?: string | null
           updated_at?: string

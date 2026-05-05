@@ -109,3 +109,146 @@ export async function fetchTwitchUser(accessToken: string): Promise<TwitchUser> 
   if (!json.data?.[0]) throw new Error("twitch /helix/users returned no user");
   return json.data[0];
 }
+
+// ─────────────────────────────────────────────────────────────
+// Clip metadata via Twitch GraphQL
+//
+// Twitch's official Helix /clips endpoint returns metadata but NOT a
+// downloadable mp4 URL. The legacy "swap -preview-WxH.jpg for .mp4"
+// trick on the thumbnail stopped working when Twitch moved clips
+// onto their new jtvnw.net CDN, so we use the same GraphQL endpoint
+// the website's player uses, which returns `videoQualities[].sourceURL`
+// plus a `playbackAccessToken` that has to be appended for the CDN to
+// serve the bytes.
+//
+// We hit gql.twitch.tv/gql with the publicly-known web Client-ID
+// (`kimne78kx3ncx6brgo4mv6wki5h1ko`). This is the documented pattern
+// every Twitch clip downloader uses; it's not a sanctioned partner
+// API, so flag if/when Twitch breaks it.
+// ─────────────────────────────────────────────────────────────
+
+const TWITCH_GQL_URL = "https://gql.twitch.tv/gql";
+const TWITCH_GQL_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+
+export interface TwitchClipMeta {
+  id: string;
+  /** Slug we queried with (Twitch's stable handle for the clip). */
+  slug: string;
+  title: string;
+  broadcasterId: string;
+  broadcasterName: string;
+  broadcasterLogin: string;
+  durationSeconds: number;
+  thumbnailUrl: string;
+  /** Direct mp4 URL with playback-access-token already appended. */
+  mp4Url: string;
+  viewCount: number;
+}
+
+interface GqlClipResponse {
+  data?: {
+    clip: {
+      id: string;
+      slug: string;
+      title: string;
+      durationSeconds: number;
+      viewCount: number;
+      thumbnailURL: string;
+      broadcaster: {
+        id: string;
+        login: string;
+        displayName: string;
+      } | null;
+      videoQualities: Array<{
+        frameRate: number;
+        quality: string;
+        sourceURL: string;
+      }>;
+      playbackAccessToken: {
+        signature: string;
+        value: string;
+      } | null;
+    } | null;
+  };
+  errors?: Array<{ message: string }>;
+}
+
+const CLIP_QUERY = `
+query CliptClipMeta($slug: ID!) {
+  clip(slug: $slug) {
+    id
+    slug
+    title
+    durationSeconds
+    viewCount
+    thumbnailURL(width: 480, height: 272)
+    broadcaster {
+      id
+      login
+      displayName
+    }
+    videoQualities {
+      frameRate
+      quality
+      sourceURL
+    }
+    playbackAccessToken(params: { platform: "web", playerType: "site" }) {
+      signature
+      value
+    }
+  }
+}`;
+
+export async function fetchTwitchClipMeta(slug: string): Promise<TwitchClipMeta | null> {
+  const res = await fetch(TWITCH_GQL_URL, {
+    method: "POST",
+    headers: {
+      "Client-Id": TWITCH_GQL_CLIENT_ID,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query: CLIP_QUERY, variables: { slug } }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`twitch gql failed: ${res.status} ${body.slice(0, 200)}`);
+  }
+
+  const json = (await res.json()) as GqlClipResponse;
+  if (json.errors?.length) {
+    throw new Error(
+      `twitch gql errors: ${json.errors.map((e) => e.message).join("; ")}`,
+    );
+  }
+
+  const clip = json.data?.clip;
+  if (!clip || !clip.broadcaster) return null;
+
+  if (!clip.videoQualities?.length) {
+    throw new Error("twitch gql returned no videoQualities (clip private or unavailable)");
+  }
+
+  // Pick highest resolution. Quality strings are "1080" / "720" / "480"…
+  const sorted = [...clip.videoQualities].sort(
+    (a, b) => Number(b.quality) - Number(a.quality),
+  );
+  const best = sorted[0];
+
+  // The CDN refuses to serve without the access token query params.
+  const mp4Url = clip.playbackAccessToken
+    ? `${best.sourceURL}?sig=${clip.playbackAccessToken.signature}&token=${encodeURIComponent(clip.playbackAccessToken.value)}`
+    : best.sourceURL;
+
+  return {
+    id: clip.id,
+    slug: clip.slug,
+    title: clip.title,
+    broadcasterId: clip.broadcaster.id,
+    broadcasterName: clip.broadcaster.displayName,
+    broadcasterLogin: clip.broadcaster.login,
+    durationSeconds: clip.durationSeconds,
+    thumbnailUrl: clip.thumbnailURL,
+    mp4Url,
+    viewCount: clip.viewCount,
+  };
+}
