@@ -24,10 +24,15 @@ export function PasteUrlForm() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const placeholder = React.useMemo(
-    () => PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)],
-    [],
-  );
+  // Render a stable placeholder on first paint (SSR + first client render
+  // match), then rotate to a random one after mount. Picking randomly at
+  // render time triggers a hydration mismatch on the input element.
+  const [placeholder, setPlaceholder] = React.useState(PLACEHOLDERS[0]);
+  React.useEffect(() => {
+    setPlaceholder(
+      PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)],
+    );
+  }, []);
 
   const {
     register,
