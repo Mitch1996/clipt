@@ -3,126 +3,116 @@
 @tailwind utilities;
 
 /* ============================================================
-   Clipt design tokens — light + dark.
-   shadcn convention: HSL channels only (no hsl() wrapper).
-   Used at call site as hsl(var(--primary)).
+   Clipt design tokens — modern editorial-tech.
+   Near-black canvas (dark default), electric yellow accent,
+   mint reserved exclusively for settled money.
+   shadcn HSL-channel convention: hsl(var(--primary)) at use-site.
    ============================================================ */
 
 @layer base {
   :root {
-    /* Page surfaces */
+    /* Surfaces */
     --background: 0 0% 100%;
-    --foreground: 240 6% 13%;
+    --foreground: 0 0% 4%;
 
-    /* Cards & popovers */
     --card: 0 0% 100%;
-    --card-foreground: 240 6% 13%;
+    --card-foreground: 0 0% 4%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 6% 13%;
+    --popover-foreground: 0 0% 4%;
 
-    /* Primary — deep navy. Brand authority color. */
-    --primary: 229 50% 25%;
+    /* Primary — high-contrast monochrome (the foreground inverted) */
+    --primary: 0 0% 4%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary — neutral chip / muted button */
-    --secondary: 240 16% 96%;
-    --secondary-foreground: 229 50% 25%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 4%;
 
-    /* Accent — electric purple. CTAs, focus, emphasis. */
-    --accent: 252 100% 68%;
-    --accent-foreground: 0 0% 100%;
+    /* Accent — electric currency yellow. CTAs, focus, emphasis. */
+    --accent: 54 100% 50%;
+    --accent-foreground: 0 0% 4%;
 
-    /* Mint — money / payouts / verified-attribution. Custom semantic. */
+    /* Mint — only for settled / paid-out money. */
     --mint: 172 100% 38%;
-    --mint-foreground: 0 0% 100%;
+    --mint-foreground: 0 0% 4%;
 
-    /* Muted — subtle backgrounds + secondary text */
-    --muted: 240 16% 96%;
-    --muted-foreground: 240 4% 44%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
 
-    /* Borders / inputs / focus ring */
-    --border: 240 10% 90%;
-    --input: 240 10% 90%;
-    --ring: 252 100% 68%;
+    --border: 0 0% 92%;
+    --input: 0 0% 92%;
+    --ring: 54 100% 50%;
 
-    /* Destructive */
-    --destructive: 6 63% 46%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Charts (mint, purple, navy, amber, slate — payout-friendly progression) */
-    --chart-1: 172 100% 38%;
-    --chart-2: 252 100% 68%;
-    --chart-3: 229 50% 25%;
-    --chart-4: 38 92% 55%;
-    --chart-5: 240 4% 44%;
+    --chart-1: 54 100% 50%;
+    --chart-2: 172 100% 38%;
+    --chart-3: 0 0% 4%;
+    --chart-4: 0 0% 40%;
+    --chart-5: 0 0% 75%;
 
-    /* Radius — generous, friendly */
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    /* Elevation (light) */
-    --shadow-sm: 0 1px 2px 0 rgb(31 31 35 / 0.05);
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
     --shadow-md:
-      0 4px 12px -2px rgb(31 31 35 / 0.08),
-      0 2px 4px -2px rgb(31 31 35 / 0.04);
+      0 4px 12px -2px rgb(0 0 0 / 0.06),
+      0 2px 4px -2px rgb(0 0 0 / 0.04);
     --shadow-lg:
-      0 16px 40px -8px rgb(31 42 94 / 0.18),
-      0 4px 12px -4px rgb(31 42 94 / 0.08);
+      0 16px 40px -8px rgb(0 0 0 / 0.12),
+      0 4px 12px -4px rgb(0 0 0 / 0.06);
     --shadow-glow:
-      0 0 0 4px hsl(252 100% 68% / 0.18),
-      0 8px 24px -6px hsl(252 100% 68% / 0.45);
+      0 0 0 4px hsl(54 100% 50% / 0.18),
+      0 8px 24px -6px hsl(54 100% 50% / 0.35);
   }
 
   .dark {
-    /* Page surfaces — true near-black with a navy tint */
-    --background: 230 24% 7%;
-    --foreground: 240 8% 95%;
+    /* Surfaces — pure near-black, slightly raised cards */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
 
-    --card: 230 22% 10%;
-    --card-foreground: 240 8% 95%;
-    --popover: 230 22% 10%;
-    --popover-foreground: 240 8% 95%;
+    --card: 0 0% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 0 0% 98%;
 
-    /* Primary inverts to a brighter navy so it reads on dark */
-    --primary: 229 60% 70%;
-    --primary-foreground: 230 40% 12%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 4%;
 
-    --secondary: 230 18% 16%;
-    --secondary-foreground: 240 8% 95%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 0 0% 98%;
 
-    /* Accent — purple stays the hero CTA color in dark */
-    --accent: 252 100% 70%;
-    --accent-foreground: 230 40% 10%;
+    --accent: 54 100% 55%;
+    --accent-foreground: 0 0% 4%;
 
-    /* Mint — slightly brighter for contrast on dark */
     --mint: 172 90% 45%;
-    --mint-foreground: 230 40% 10%;
+    --mint-foreground: 0 0% 4%;
 
-    --muted: 230 18% 14%;
-    --muted-foreground: 240 6% 65%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 64%;
 
-    --border: 230 18% 18%;
-    --input: 230 18% 18%;
-    --ring: 252 100% 70%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 54 100% 55%;
 
-    --destructive: 6 70% 55%;
+    --destructive: 0 75% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --chart-1: 172 90% 45%;
-    --chart-2: 252 100% 70%;
-    --chart-3: 229 60% 70%;
-    --chart-4: 38 92% 60%;
-    --chart-5: 240 6% 65%;
+    --chart-1: 54 100% 55%;
+    --chart-2: 172 90% 45%;
+    --chart-3: 0 0% 98%;
+    --chart-4: 0 0% 64%;
+    --chart-5: 0 0% 30%;
 
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
     --shadow-md:
       0 4px 12px -2px rgb(0 0 0 / 0.5),
-      0 2px 4px -2px rgb(0 0 0 / 0.35);
+      0 2px 4px -2px rgb(0 0 0 / 0.3);
     --shadow-lg:
       0 16px 40px -8px rgb(0 0 0 / 0.6),
-      0 4px 12px -4px rgb(0 0 0 / 0.45);
+      0 4px 12px -4px rgb(0 0 0 / 0.4);
     --shadow-glow:
-      0 0 0 4px hsl(252 100% 70% / 0.22),
-      0 8px 32px -4px hsl(252 100% 70% / 0.55);
+      0 0 0 4px hsl(54 100% 55% / 0.18),
+      0 8px 32px -4px hsl(54 100% 55% / 0.40);
   }
 }
 
@@ -133,9 +123,13 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings:
-      "cv11",
       "ss01",
-      "ss03";
+      "ss03",
+      "cv11";
     -webkit-font-smoothing: antialiased;
+  }
+  /* Tabular numerics on stats and money */
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }

@@ -20,16 +20,16 @@ export function Logo({ pulse = false, className, ...props }: LogoProps) {
       viewBox="0 0 220 56"
       role="img"
       aria-label="Clipt"
-      className={cn("h-8 w-auto text-primary dark:text-foreground", className)}
+      className={cn("h-8 w-auto text-foreground", className)}
       {...props}
     >
       <text
         x="0"
         y="44"
-        fontFamily="var(--font-sans), Inter, system-ui, sans-serif"
+        fontFamily="var(--font-sans), Geist, system-ui, sans-serif"
         fontWeight={800}
         fontSize={48}
-        letterSpacing={-1.5}
+        letterSpacing={-2}
         fill="currentColor"
       >
         Clipt

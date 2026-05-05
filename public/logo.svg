@@ -1,6 +1,4 @@
-
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 56" role="img" aria-label="Clipt">
-  <text x="0" y="44" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="48" letter-spacing="-1.5" fill="#1F2A5E">Clipt</text>
-  
-  <circle id="dot" cx="125" cy="42" r="6" fill="#7B5BFF"></circle>
+  <text x="0" y="44" font-family="Geist, Inter, system-ui, sans-serif" font-weight="800" font-size="48" letter-spacing="-2" fill="#0A0A0A">Clipt</text>
+  <circle id="dot" cx="125" cy="42" r="6" fill="#FFE600"/>
 </svg>
