@@ -95,10 +95,33 @@ The build is sequenced through the prompt pack at [_prompt-pack/CLIPT_PROMPT_PAC
 
 ### Background jobs
 
-- Inngest functions live at `src/inngest/functions/<name>.ts` and are
-  re-exported from `src/inngest/functions/index.ts`. Each function uses
-  `step.run` so individual steps can retry on their own.
-- Triggers fire via the Inngest client, never via direct cron or `setTimeout`.
+- The Inngest **client** lives at `src/inngest/client.ts` and is the only
+  place we instantiate it. Import `inngest` from there to send events.
+- **Functions** live at `src/inngest/functions/<name>.ts` and are
+  re-exported as a single array from `src/inngest/functions/index.ts`.
+  Add new functions to that registry; the registry is what
+  `/api/inngest` serves.
+- Each function uses `step.run("step-name", async () => …)` for any
+  side-effectful work so failures retry in isolation. Use
+  `step.sleep(...)` for delays and `step.sleepUntil(...)` for scheduled
+  posts.
+- **Event names** are typed in `Events` at the top of `src/inngest/client.ts`.
+  Add new events there before sending them so functions auto-complete the
+  payload shape.
+- Triggers fire via `await inngest.send(...)`, never via direct cron,
+  `setTimeout`, or fetch-to-`/api/inngest`. Inngest handles ordering,
+  retries, and durable execution.
+
+#### Local dev
+
+Two terminals: `pnpm dev` (Next, port 3006) and `pnpm inngest:dev`
+(Inngest dev server at `127.0.0.1:8288`, configured to talk to
+`/api/inngest`). The dev server is unauthenticated and discovers
+functions automatically — you don't need the prod signing key locally.
+
+A debug page at `/dev/inngest` triggers `clip/requested` against a
+freshly-inserted dummy clip so you can confirm the wiring without
+running through the full pipeline.
 
 ### Tests
 
