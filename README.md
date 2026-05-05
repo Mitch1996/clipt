@@ -1,5 +1,7 @@
 # Clipt
 
+> **Read [CLAUDE.md](./CLAUDE.md) before changing anything.** It's the source of truth for stack, conventions, folder rules, and naming. The same content is rendered at [`/dev/conventions`](http://localhost:3000/dev/conventions) when the dev server is up.
+
 Clipt is a content-clipping platform where streamers, fans, clippers, and brands all share in the value of every clip. Paste a Twitch / YouTube / Kick URL (or detect a live moment in real time) and Clipt produces a vertical, captioned, cryptographically attributed short — ready to post to TikTok, Reels, and YouTube Shorts. Earnings flow back to the original creator on every play.
 
 ## How to develop
