@@ -70,6 +70,7 @@ export type Database = {
           platform_username: string | null
           refresh_token_encrypted: string | null
           scopes: string[] | null
+          token_expires_at: string | null
           updated_at: string
         }
         Insert: {
@@ -84,6 +85,7 @@ export type Database = {
           platform_username?: string | null
           refresh_token_encrypted?: string | null
           scopes?: string[] | null
+          token_expires_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -98,6 +100,7 @@ export type Database = {
           platform_username?: string | null
           refresh_token_encrypted?: string | null
           scopes?: string[] | null
+          token_expires_at?: string | null
           updated_at?: string
         }
         Relationships: [
