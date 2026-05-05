@@ -46,3 +46,61 @@ src/
 ```
 
 The Clipt prompt pack (the source-of-truth playbook for every feature increment) lives in `_prompt-pack/`.
+
+## Database
+
+Schema lives in `supabase/migrations/`. We use [Supabase](https://supabase.com)
+for Postgres, Auth, Storage, and Realtime. The CLI is installed as a dev
+dep — every command works through `pnpm db:*`.
+
+### One-time setup (per developer)
+
+1. Create a project at [supabase.com](https://supabase.com/dashboard).
+2. Copy `.env.example` to `.env.local` and fill in:
+   - `NEXT_PUBLIC_SUPABASE_URL` — `https://<ref>.supabase.co` (project ref
+     is the slug in the dashboard URL)
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Project settings → API
+   - `SUPABASE_SERVICE_ROLE_KEY` — same screen (server-only, never
+     imported in client code; the `import "server-only"` guard in
+     `src/lib/supabase/admin.ts` keeps it out of the client bundle)
+   - `SUPABASE_DB_URL` — pooled Postgres connection string. Copy from
+     Project settings → Database → "Connection pooling" (use *Session*
+     mode on port `5432`, not Transaction mode on `6543` — DDL needs
+     session mode). URL-encode the password (`@` → `%40`, etc.).
+3. Apply the migrations and pull types:
+   ```bash
+   pnpm db:push
+   pnpm db:types
+   ```
+
+### Adding a migration
+
+```bash
+# Hand-author a file as supabase/migrations/000N_<short_name>.sql, OR
+# capture a dashboard schema diff:
+pnpm db:diff <short_name>
+
+# Then apply + regenerate types:
+pnpm db:push
+pnpm db:types
+```
+
+### Resetting locally (Docker required)
+
+`pnpm db:reset` re-applies every migration to the local Supabase stack.
+Useful for testing migration order from a clean slate.
+
+### Row Level Security
+
+RLS is enabled on every table. The policy contract is documented at the
+top of `0001_init.sql` and summarised here:
+
+| Table | Read | Write |
+|---|---|---|
+| `profiles` | owner; public (any row, but client must select only `id, handle, display_name, avatar_url`); admin | owner (update); admin |
+| `channels` | owner; admin | owner |
+| `clips` | source creator, clipper; public when `status='ready'`; admin | source creator, clipper (update); admin |
+| `clip_posts` | inherited via parent clip's read policy; admin | admin |
+| `attributions` | original creator, clipper; admin | admin |
+| `earnings_ledger` | owner; admin | admin |
+| `waitlist` | admin | anyone (insert only) |
