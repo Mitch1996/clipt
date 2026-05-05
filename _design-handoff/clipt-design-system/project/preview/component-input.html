@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .input{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;
+    border:1px solid hsl(var(--border));border-radius:calc(var(--radius) - 2px);
+    background:hsl(var(--background));font-size:14px;font-family:var(--font-sans);width:100%}
+  .input input{border:0;outline:0;flex:1;background:transparent;color:inherit;font:inherit}
+  .input:focus-within{border-color:hsl(var(--ring));box-shadow:0 0 0 3px hsl(var(--ring) / 0.15)}
+  .helper{font-size:12px;color:hsl(var(--muted-foreground))}
+  .helper.err{color:hsl(var(--destructive))}
+  label{font-size:13px;font-weight:500}
+</style></head>
+<body><div class="card">
+  <div class="label">Input · states</div>
+  <div class="col">
+    <div class="col" style="gap:6px"><label>Stream URL</label>
+      <div class="input"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.6"><path d="M9 17H7a5 5 0 010-10h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg><input placeholder="twitch.tv/yourchannel"></div></div>
+    <div class="col" style="gap:6px"><label>Channel</label>
+      <div class="input" style="border-color:hsl(var(--ring));box-shadow:0 0 0 3px hsl(var(--ring) / 0.15)"><input value="@bigshow"></div>
+      <div class="helper">Public on your Clipt profile.</div></div>
+    <div class="col" style="gap:6px"><label>Payout email</label>
+      <div class="input" style="border-color:hsl(var(--destructive));background:hsl(var(--destructive) / 0.04)"><input value="not-an-email"></div>
+      <div class="helper err">Enter a valid email to receive payouts.</div></div>
+  </div>
+</div></body></html>

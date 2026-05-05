@@ -39,6 +39,11 @@ const config: Config = {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
         },
+        // Custom — Clipt's "money" color (payouts, attribution, splits)
+        mint: {
+          DEFAULT: "hsl(var(--mint))",
+          foreground: "hsl(var(--mint-foreground))",
+        },
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",
@@ -53,6 +58,16 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      fontFamily: {
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "Menlo", "Consolas", "monospace"],
+      },
+      boxShadow: {
+        "brand-sm": "var(--shadow-sm)",
+        "brand-md": "var(--shadow-md)",
+        "brand-lg": "var(--shadow-lg)",
+        glow: "var(--shadow-glow)",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },
@@ -62,10 +77,28 @@ const config: Config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "pulse-attribution": {
+          "0%, 100%": {
+            boxShadow:
+              "0 0 0 0 hsl(var(--accent) / 0.55), 0 0 0 0 hsl(var(--accent) / 0)",
+            transform: "scale(1)",
+          },
+          "50%": {
+            boxShadow:
+              "0 0 0 6px hsl(var(--accent) / 0.18), 0 0 18px 2px hsl(var(--accent) / 0.45)",
+            transform: "scale(1.03)",
+          },
+        },
+        "pulse-dot": {
+          "0%, 100%": { transform: "scale(1)", opacity: "1" },
+          "50%": { transform: "scale(1.25)", opacity: "0.85" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-attribution": "pulse-attribution 2s ease-in-out infinite",
+        "pulse-dot": "pulse-dot 2s ease-in-out infinite",
       },
     },
   },

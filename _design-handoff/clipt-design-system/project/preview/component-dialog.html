@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .scrim{background:hsl(230 24% 7% / 0.6);padding:16px;border-radius:var(--radius)}
+  .dialog{background:hsl(var(--card));border:1px solid hsl(var(--border));
+    border-radius:var(--radius);padding:20px;box-shadow:var(--shadow-lg);
+    display:flex;flex-direction:column;gap:14px;max-width:380px;margin:0 auto}
+  .dialog h4{margin:0;font-size:16px;font-weight:600}
+  .dialog p{margin:0;font-size:13px;color:hsl(var(--muted-foreground));line-height:1.5}
+</style></head>
+<body><div class="card">
+  <div class="label">Dialog · payout confirmation</div>
+  <div class="scrim">
+    <div class="dialog">
+      <h4>Cash out $2,418.74?</h4>
+      <p>Funds will arrive at <strong style="color:hsl(var(--foreground))">visa •••• 4421</strong> in 1–2 business days. Splits to 4 clippers happen automatically.</p>
+      <div class="row" style="gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm">Cancel</button>
+        <button class="btn btn-default btn-sm">Cash out</button>
+      </div>
+    </div>
+  </div>
+</div></body></html>

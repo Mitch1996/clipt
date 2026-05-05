@@ -1,0 +1,81 @@
+/**
+ * Clipt — Tailwind v3 + shadcn/ui config snippet.
+ * Drop the `theme.extend` block into your tailwind.config.{js,ts}.
+ * Pair with colors_and_type.css (or migrate the :root/.dark blocks into globals.css).
+ */
+module.exports = {
+  darkMode: ['class'],
+  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  theme: {
+    container: { center: true, padding: '2rem', screens: { '2xl': '1400px' } },
+    extend: {
+      colors: {
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        // Custom — Clipt's "money" color
+        mint: {
+          DEFAULT: 'hsl(var(--mint))',
+          foreground: 'hsl(var(--mint-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
+      fontFamily: {
+        sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)'],
+      },
+      keyframes: {
+        'pulse-attribution': {
+          '0%, 100%': {
+            boxShadow:
+              '0 0 0 0 hsl(var(--accent) / 0.55), 0 0 0 0 hsl(var(--accent) / 0)',
+            transform: 'scale(1)',
+          },
+          '50%': {
+            boxShadow:
+              '0 0 0 6px hsl(var(--accent) / 0.18), 0 0 18px 2px hsl(var(--accent) / 0.45)',
+            transform: 'scale(1.03)',
+          },
+        },
+      },
+      animation: {
+        'pulse-attribution': 'pulse-attribution 2s ease-in-out infinite',
+      },
+    },
+  },
+  plugins: [require('tailwindcss-animate')],
+};

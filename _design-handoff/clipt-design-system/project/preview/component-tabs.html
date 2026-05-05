@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .tabs{background:hsl(var(--secondary));padding:4px;border-radius:calc(var(--radius) - 2px);
+    display:inline-flex;gap:2px}
+  .tab{padding:8px 16px;border-radius:calc(var(--radius) - 4px);font-size:13px;font-weight:500;
+    cursor:pointer;color:hsl(var(--muted-foreground));border:0;background:transparent;font-family:var(--font-sans)}
+  .tab.active{background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:var(--shadow-sm)}
+  .pane{margin-top:16px;padding:16px;border:1px solid hsl(var(--border));border-radius:var(--radius);
+    font-size:13px;color:hsl(var(--muted-foreground));line-height:1.6}
+</style></head>
+<body><div class="card">
+  <div class="label">Tabs</div>
+  <div class="tabs">
+    <button class="tab active">Earnings</button>
+    <button class="tab">Clips</button>
+    <button class="tab">Attribution</button>
+    <button class="tab">Settings</button>
+  </div>
+  <div class="pane">
+    <strong style="color:hsl(var(--foreground))">$2,418.74</strong> earned across 41 clips this month. <span style="color:hsl(var(--mint));font-weight:600">+ $312</span> waiting in unverified attribution — confirm to release.
+  </div>
+</div></body></html>

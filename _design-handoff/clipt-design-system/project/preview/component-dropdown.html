@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .menu{background:hsl(var(--popover));border:1px solid hsl(var(--border));border-radius:var(--radius);
+    box-shadow:var(--shadow-md);padding:6px;width:240px;display:flex;flex-direction:column;gap:2px}
+  .mi{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;
+    font-size:13px;cursor:pointer;color:hsl(var(--foreground))}
+  .mi:hover{background:hsl(var(--muted))}
+  .mi.active{background:hsl(var(--accent) / 0.1);color:hsl(var(--accent))}
+  .mi.danger{color:hsl(var(--destructive))}
+  .mi .kbd{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:hsl(var(--muted-foreground))}
+  .mi.danger:hover{background:hsl(var(--destructive) / 0.08)}
+  .sep{height:1px;background:hsl(var(--border));margin:4px 0}
+  .mlabel{font-size:11px;color:hsl(var(--muted-foreground));padding:6px 10px 2px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600}
+</style></head>
+<body><div class="card">
+  <div class="label">Dropdown menu</div>
+  <div class="row" style="gap:24px">
+    <div class="menu">
+      <div class="mlabel">Clip actions</div>
+      <div class="mi">▶ Play <span class="kbd">Space</span></div>
+      <div class="mi active">⇪ Share clip</div>
+      <div class="mi">＃ Copy link <span class="kbd">⌘C</span></div>
+      <div class="sep"></div>
+      <div class="mi">⤓ Download MP4</div>
+      <div class="mi danger">✕ Remove from channel</div>
+    </div>
+    <div style="flex:1;font-size:12px;color:hsl(var(--muted-foreground));line-height:1.5">
+      Items align to popover surface. Active state uses purple at 10% with full-saturation foreground. Destructive item lives below a separator.
+    </div>
+  </div>
+</div></body></html>

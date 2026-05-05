@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <title>Clipt — UI kit</title>
+  <link rel="icon" href="../../assets/favicon.svg">
+  <link rel="stylesheet" href="../../colors_and_type.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: ['class'],
+      theme: { extend: {
+        colors: {
+          border: 'hsl(var(--border))', input: 'hsl(var(--input))', ring: 'hsl(var(--ring))',
+          background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))',
+          primary:     { DEFAULT: 'hsl(var(--primary))',     foreground: 'hsl(var(--primary-foreground))' },
+          secondary:   { DEFAULT: 'hsl(var(--secondary))',   foreground: 'hsl(var(--secondary-foreground))' },
+          accent:      { DEFAULT: 'hsl(var(--accent))',      foreground: 'hsl(var(--accent-foreground))' },
+          mint:        { DEFAULT: 'hsl(var(--mint))',        foreground: 'hsl(var(--mint-foreground))' },
+          muted:       { DEFAULT: 'hsl(var(--muted))',       foreground: 'hsl(var(--muted-foreground))' },
+          destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
+          card:        { DEFAULT: 'hsl(var(--card))',        foreground: 'hsl(var(--card-foreground))' },
+          popover:     { DEFAULT: 'hsl(var(--popover))',     foreground: 'hsl(var(--popover-foreground))' },
+        },
+        borderRadius: {
+          lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)'
+        },
+        fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
+      }},
+    };
+  </script>
+  <style>
+    /* Mesh gradient — purple + navy + faint mint, soft and atmospheric */
+    .mesh {
+      background-color: hsl(230 24% 7%);
+      background-image:
+        radial-gradient(at 12% 18%, hsl(252 100% 68% / 0.35) 0, transparent 40%),
+        radial-gradient(at 85% 12%, hsl(229 60% 30% / 0.55) 0, transparent 45%),
+        radial-gradient(at 90% 85%, hsl(172 100% 38% / 0.18) 0, transparent 40%),
+        radial-gradient(at 30% 92%, hsl(252 80% 35% / 0.30) 0, transparent 45%);
+    }
+    .grid-overlay {
+      background-image:
+        linear-gradient(hsl(var(--foreground) / 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, hsl(var(--foreground) / 0.04) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: radial-gradient(ellipse 70% 50% at 50% 30%, #000 30%, transparent 80%);
+    }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body class="bg-background text-foreground">
+<div id="root"></div>
+
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+
+function Nav({ theme, setTheme }) {
+  return (
+    <nav className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-8 py-5">
+      <div className="flex items-center gap-10 text-foreground">
+        <Logo size={26} />
+        <div className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
+          <a className="hover:text-foreground transition-colors" href="#">For streamers</a>
+          <a className="hover:text-foreground transition-colors" href="#">For clippers</a>
+          <a className="hover:text-foreground transition-colors" href="#">For brands</a>
+          <a className="hover:text-foreground transition-colors" href="#">Pricing</a>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <ThemeToggle value={theme} onChange={setTheme} />
+        <Button variant="ghost" size="sm">Sign in</Button>
+        <Button size="sm">Get the dot →</Button>
+      </div>
+    </nav>
+  );
+}
+
+function Hero() {
+  return (
+    <section className="relative mesh min-h-[820px] overflow-hidden">
+      <div className="absolute inset-0 grid-overlay" />
+      <div className="relative z-10 max-w-6xl mx-auto px-8 pt-32 pb-20">
+
+        <div className="flex justify-center mb-6">
+          <AttributionBadge live label="Every clip pays the creator" />
+        </div>
+
+        <h1 className="text-center font-bold tracking-tight text-foreground"
+            style={{ fontSize: 'clamp(3rem, 6vw, 5.25rem)', lineHeight: 1.02, letterSpacing: '-0.03em' }}>
+          Stream. Clip.<br/>
+          <span className="text-accent">Earn together<span className="text-accent">.</span></span>
+        </h1>
+
+        <p className="mt-6 max-w-2xl mx-auto text-center text-lg text-muted-foreground leading-relaxed">
+          Clipt routes payouts to <strong className="text-foreground">every</strong> person in the attribution chain —
+          streamer, clipper, fan and brand — automatically, on every view.
+        </p>
+
+        <div className="mt-9 flex items-center justify-center gap-3">
+          <Button size="lg" className="shadow-[0_0_0_4px_hsl(var(--accent)/0.18),0_8px_24px_-6px_hsl(var(--accent)/0.45)]">
+            Start earning free
+          </Button>
+          <Button variant="outline" size="lg" className="bg-transparent">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            Watch a 60s tour
+          </Button>
+        </div>
+
+        <div className="mt-14">
+          <StatStrip stats={[
+            { label: 'Paid to creators',       value: '$48.2', unit: 'M', note: 'across 1,402,118 clips' },
+            { label: 'Avg attribution chain',  value: '3.4',   unit: 'people', note: 'per verified clip' },
+            { label: 'Payout latency',         value: '< 24',  unit: 'hrs',     note: 'from view → bank' },
+          ]} />
+        </div>
+
+      </div>
+    </section>
+  );
+}
+
+function ChainSection() {
+  const roles = [
+    { tag: 'Streamer', cut: '55%', desc: 'You went live. The moment is yours.' },
+    { tag: 'Clipper',  cut: '25%', desc: 'You found the moment, you trimmed it, you posted it.' },
+    { tag: 'Fan',      cut: '10%', desc: 'You shared it, it went off — you helped.' },
+    { tag: 'Brand',    cut: '10%', desc: 'You ran the campaign that funded the slot.' },
+  ];
+  return (
+    <section className="bg-background border-t border-border">
+      <div className="max-w-6xl mx-auto px-8 py-24">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-3">The chain</div>
+        <h2 className="text-4xl md:text-5xl font-bold tracking-tight max-w-2xl">
+          Four people made this clip happen. <span className="text-mint">Four people get paid.</span>
+        </h2>
+        <div className="grid md:grid-cols-4 gap-4 mt-12">
+          {roles.map((r, i) => (
+            <div key={r.tag} className="rounded-2xl border border-border bg-card p-6 flex flex-col gap-3 hover:border-accent/40 transition-colors">
+              <div className="flex items-center justify-between">
+                <Badge variant="purple">{`0${i+1}`}</Badge>
+                <span className="text-mint font-bold tabular-nums text-lg">{r.cut}</span>
+              </div>
+              <div className="font-semibold text-lg">{r.tag}</div>
+              <div className="text-sm text-muted-foreground leading-relaxed">{r.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function App() {
+  const [theme, setTheme] = useState('dark');
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove('dark');
+    if (theme === 'dark') root.classList.add('dark');
+    if (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches) root.classList.add('dark');
+  }, [theme]);
+
+  return (
+    <div data-screen-label="Landing">
+      <Nav theme={theme} setTheme={setTheme} />
+      <Hero />
+      <ChainSection />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body></html>

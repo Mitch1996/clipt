@@ -2,50 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Clipt design tokens — light + dark.
+   shadcn convention: HSL channels only (no hsl() wrapper).
+   Used at call site as hsl(var(--primary)).
+   ============================================================ */
+
 @layer base {
   :root {
+    /* Page surfaces */
     --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --foreground: 240 6% 13%;
+
+    /* Cards & popovers */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 240 6% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    --popover-foreground: 240 6% 13%;
+
+    /* Primary — deep navy. Brand authority color. */
+    --primary: 229 50% 25%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary — neutral chip / muted button */
+    --secondary: 240 16% 96%;
+    --secondary-foreground: 229 50% 25%;
+
+    /* Accent — electric purple. CTAs, focus, emphasis. */
+    --accent: 252 100% 68%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Mint — money / payouts / verified-attribution. Custom semantic. */
+    --mint: 172 100% 38%;
+    --mint-foreground: 0 0% 100%;
+
+    /* Muted — subtle backgrounds + secondary text */
+    --muted: 240 16% 96%;
+    --muted-foreground: 240 4% 44%;
+
+    /* Borders / inputs / focus ring */
+    --border: 240 10% 90%;
+    --input: 240 10% 90%;
+    --ring: 252 100% 68%;
+
+    /* Destructive */
+    --destructive: 6 63% 46%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Charts (mint, purple, navy, amber, slate — payout-friendly progression) */
+    --chart-1: 172 100% 38%;
+    --chart-2: 252 100% 68%;
+    --chart-3: 229 50% 25%;
+    --chart-4: 38 92% 55%;
+    --chart-5: 240 4% 44%;
+
+    /* Radius — generous, friendly */
     --radius: 0.75rem;
+
+    /* Elevation (light) */
+    --shadow-sm: 0 1px 2px 0 rgb(31 31 35 / 0.05);
+    --shadow-md:
+      0 4px 12px -2px rgb(31 31 35 / 0.08),
+      0 2px 4px -2px rgb(31 31 35 / 0.04);
+    --shadow-lg:
+      0 16px 40px -8px rgb(31 42 94 / 0.18),
+      0 4px 12px -4px rgb(31 42 94 / 0.08);
+    --shadow-glow:
+      0 0 0 4px hsl(252 100% 68% / 0.18),
+      0 8px 24px -6px hsl(252 100% 68% / 0.45);
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    /* Page surfaces — true near-black with a navy tint */
+    --background: 230 24% 7%;
+    --foreground: 240 8% 95%;
+
+    --card: 230 22% 10%;
+    --card-foreground: 240 8% 95%;
+    --popover: 230 22% 10%;
+    --popover-foreground: 240 8% 95%;
+
+    /* Primary inverts to a brighter navy so it reads on dark */
+    --primary: 229 60% 70%;
+    --primary-foreground: 230 40% 12%;
+
+    --secondary: 230 18% 16%;
+    --secondary-foreground: 240 8% 95%;
+
+    /* Accent — purple stays the hero CTA color in dark */
+    --accent: 252 100% 70%;
+    --accent-foreground: 230 40% 10%;
+
+    /* Mint — slightly brighter for contrast on dark */
+    --mint: 172 90% 45%;
+    --mint-foreground: 230 40% 10%;
+
+    --muted: 230 18% 14%;
+    --muted-foreground: 240 6% 65%;
+
+    --border: 230 18% 18%;
+    --input: 230 18% 18%;
+    --ring: 252 100% 70%;
+
+    --destructive: 6 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --chart-1: 172 90% 45%;
+    --chart-2: 252 100% 70%;
+    --chart-3: 229 60% 70%;
+    --chart-4: 38 92% 60%;
+    --chart-5: 240 6% 65%;
+
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+    --shadow-md:
+      0 4px 12px -2px rgb(0 0 0 / 0.5),
+      0 2px 4px -2px rgb(0 0 0 / 0.35);
+    --shadow-lg:
+      0 16px 40px -8px rgb(0 0 0 / 0.6),
+      0 4px 12px -4px rgb(0 0 0 / 0.45);
+    --shadow-glow:
+      0 0 0 4px hsl(252 100% 70% / 0.22),
+      0 8px 32px -4px hsl(252 100% 70% / 0.55);
   }
 }
 
@@ -55,5 +132,10 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings:
+      "cv11",
+      "ss01",
+      "ss03";
+    -webkit-font-smoothing: antialiased;
   }
 }

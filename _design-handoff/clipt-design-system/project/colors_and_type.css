@@ -1,0 +1,224 @@
+/* ============================================================
+   Clipt Design System — Tokens
+   Tagline: "Every clip pays the creator."
+
+   Conventions
+   - All color tokens are HSL CHANNELS (no hsl() wrapper, no commas).
+     This is the shadcn convention: hsl(var(--primary)) at use-site.
+   - :root carries LIGHT mode; .dark overrides for dark mode.
+   - Brand palette is canonical. Do not retune hues.
+   ============================================================ */
+
+@import url('./fonts/inter.css');
+
+:root {
+  /* ----- Brand palette (raw, hex-form, for reference & non-CSS use) ----- */
+  --brand-navy: #1F2A5E;       /* primary, deep navy */
+  --brand-purple: #7B5BFF;     /* accent, electric purple — primary CTA */
+  --brand-mint: #00C2A8;       /* accent-2, money / payouts / attribution */
+  --brand-warning: #C0392B;    /* destructive */
+  --brand-surface: #FFFFFF;
+  --brand-surface-muted: #F4F4F7;
+  --brand-text: #1F1F23;
+  --brand-text-muted: #6B6B73;
+
+  /* ----- shadcn semantic tokens (LIGHT) — HSL channels ----- */
+
+  /* Page surfaces */
+  --background: 0 0% 100%;             /* #FFFFFF */
+  --foreground: 240 6% 13%;            /* #1F1F23 */
+
+  /* Cards & popovers */
+  --card: 0 0% 100%;
+  --card-foreground: 240 6% 13%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 6% 13%;
+
+  /* Primary — deep navy. (Brand authority color, used for navs / dense surfaces) */
+  --primary: 229 50% 25%;              /* #1F2A5E */
+  --primary-foreground: 0 0% 100%;
+
+  /* Secondary — neutral chip / muted button */
+  --secondary: 240 16% 96%;            /* #F4F4F7 */
+  --secondary-foreground: 229 50% 25%;
+
+  /* Accent — electric purple. CTAs, focus, emphasis. */
+  --accent: 252 100% 68%;              /* #7B5BFF */
+  --accent-foreground: 0 0% 100%;
+
+  /* Mint — "money" / payouts / verified-attribution. Custom semantic. */
+  --mint: 172 100% 38%;                /* #00C2A8 */
+  --mint-foreground: 0 0% 100%;
+
+  /* Muted — subtle backgrounds + secondary text */
+  --muted: 240 16% 96%;
+  --muted-foreground: 240 4% 44%;      /* #6B6B73 */
+
+  /* Borders / inputs / focus ring */
+  --border: 240 10% 90%;
+  --input: 240 10% 90%;
+  --ring: 252 100% 68%;                /* purple — focus ring is the brand accent */
+
+  /* Destructive */
+  --destructive: 6 63% 46%;            /* #C0392B */
+  --destructive-foreground: 0 0% 100%;
+
+  /* Charts (mint, purple, navy, amber, slate — payout-friendly progression) */
+  --chart-1: 172 100% 38%;
+  --chart-2: 252 100% 68%;
+  --chart-3: 229 50% 25%;
+  --chart-4: 38 92% 55%;
+  --chart-5: 240 4% 44%;
+
+  /* ----- Radius ----- */
+  --radius: 0.75rem;                   /* base radius — generous, friendly */
+
+  /* ----- Type ----- */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+
+  /* Type scale (semantic — referenced by .display, .h1, etc) */
+  --fs-display: clamp(3rem, 5.5vw, 4.5rem);  /* 48–72 */
+  --fs-h1: 2.25rem;     /* 36 */
+  --fs-h2: 1.75rem;     /* 28 */
+  --fs-h3: 1.375rem;    /* 22 */
+  --fs-h4: 1.125rem;    /* 18 */
+  --fs-body: 1rem;      /* 16 */
+  --fs-sm: 0.875rem;    /* 14 */
+  --fs-xs: 0.75rem;     /* 12 */
+
+  --lh-tight: 1.05;
+  --lh-snug: 1.2;
+  --lh-normal: 1.5;
+  --lh-loose: 1.7;
+
+  /* ----- Elevation (light) ----- */
+  --shadow-sm: 0 1px 2px 0 rgb(31 31 35 / 0.05);
+  --shadow-md: 0 4px 12px -2px rgb(31 31 35 / 0.08), 0 2px 4px -2px rgb(31 31 35 / 0.04);
+  --shadow-lg: 0 16px 40px -8px rgb(31 42 94 / 0.18), 0 4px 12px -4px rgb(31 42 94 / 0.08);
+  --shadow-glow: 0 0 0 4px hsl(252 100% 68% / 0.18), 0 8px 24px -6px hsl(252 100% 68% / 0.45);
+
+  /* ----- Spacing (4-pt scale) ----- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+}
+
+.dark {
+  /* Page surfaces — true near-black with a navy tint */
+  --background: 230 24% 7%;            /* deep blue-black */
+  --foreground: 240 8% 95%;
+
+  --card: 230 22% 10%;
+  --card-foreground: 240 8% 95%;
+  --popover: 230 22% 10%;
+  --popover-foreground: 240 8% 95%;
+
+  /* Primary inverts to a brighter navy so it reads on dark */
+  --primary: 229 60% 70%;
+  --primary-foreground: 230 40% 12%;
+
+  --secondary: 230 18% 16%;
+  --secondary-foreground: 240 8% 95%;
+
+  /* Accent — purple stays the hero CTA color in dark */
+  --accent: 252 100% 70%;
+  --accent-foreground: 230 40% 10%;
+
+  /* Mint — slightly brighter for contrast on dark */
+  --mint: 172 90% 45%;
+  --mint-foreground: 230 40% 10%;
+
+  --muted: 230 18% 14%;
+  --muted-foreground: 240 6% 65%;
+
+  --border: 230 18% 18%;
+  --input: 230 18% 18%;
+  --ring: 252 100% 70%;
+
+  --destructive: 6 70% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --chart-1: 172 90% 45%;
+  --chart-2: 252 100% 70%;
+  --chart-3: 229 60% 70%;
+  --chart-4: 38 92% 60%;
+  --chart-5: 240 6% 65%;
+
+  /* Elevation in dark — softer, with a slight purple bloom on glow */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.35);
+  --shadow-lg: 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.45);
+  --shadow-glow: 0 0 0 4px hsl(252 100% 70% / 0.22), 0 8px 32px -4px hsl(252 100% 70% / 0.55);
+}
+
+/* ============================================================
+   Base typography
+   ============================================================ */
+html, body {
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';  /* Inter optical refinements */
+  -webkit-font-smoothing: antialiased;
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+}
+
+.display {
+  font-size: var(--fs-display);
+  line-height: var(--lh-tight);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+h1, .h1 { font-size: var(--fs-h1); line-height: var(--lh-snug); font-weight: 700; letter-spacing: -0.02em; }
+h2, .h2 { font-size: var(--fs-h2); line-height: var(--lh-snug); font-weight: 700; letter-spacing: -0.015em; }
+h3, .h3 { font-size: var(--fs-h3); line-height: var(--lh-snug); font-weight: 600; letter-spacing: -0.01em; }
+h4, .h4 { font-size: var(--fs-h4); line-height: var(--lh-snug); font-weight: 600; }
+p, .p   { font-size: var(--fs-body); line-height: var(--lh-normal); }
+.small  { font-size: var(--fs-sm); line-height: var(--lh-normal); }
+.tiny   { font-size: var(--fs-xs); line-height: var(--lh-normal); }
+.mono   { font-family: var(--font-mono); }
+
+.text-muted { color: hsl(var(--muted-foreground)); }
+.text-mint  { color: hsl(var(--mint)); }
+.text-accent { color: hsl(var(--accent)); }
+
+/* ============================================================
+   Brand keyframe — pulse-attribution
+   Used on the verified-attribution badge. Subtle 2s purple glow.
+   ============================================================ */
+@keyframes pulse-attribution {
+  0%, 100% {
+    box-shadow:
+      0 0 0 0 hsl(var(--accent) / 0.55),
+      0 0 0 0 hsl(var(--accent) / 0);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px hsl(var(--accent) / 0.18),
+      0 0 18px 2px hsl(var(--accent) / 0.45);
+    transform: scale(1.03);
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.25); opacity: 0.85; }
+}
+
+.pulse-attribution { animation: pulse-attribution 2s ease-in-out infinite; }
+.pulse-dot         { animation: pulse-dot 2s ease-in-out infinite; }
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-attribution, .pulse-dot { animation: none; }
+}

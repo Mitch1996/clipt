@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .toggle{display:inline-flex;background:hsl(var(--secondary));padding:3px;border-radius:9999px;gap:2px;
+    border:1px solid hsl(var(--border))}
+  .toggle button{width:34px;height:30px;border-radius:9999px;background:transparent;border:0;
+    color:hsl(var(--muted-foreground));cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .toggle button.active{background:hsl(var(--background));color:hsl(var(--accent));box-shadow:var(--shadow-sm)}
+  .toggle.dark{background:hsl(230 18% 14%);border-color:hsl(230 18% 22%)}
+  .toggle.dark button.active{background:hsl(230 22% 10%);color:hsl(var(--accent))}
+  .toggle.dark button{color:#9a9aa6}
+  .legend{font-size:11px;color:hsl(var(--muted-foreground));text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-top:6px}
+  .stage{display:flex;align-items:center;gap:28px}
+  .stage > div{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px;border-radius:var(--radius);border:1px solid hsl(var(--border))}
+  .stage > div.d{background:hsl(230 24% 7%);border-color:hsl(230 18% 18%)}
+</style></head>
+<body><div class="card">
+  <div class="label">ThemeToggle · sun · moon · system</div>
+  <div class="stage">
+    <div>
+      <div class="toggle">
+        <button class="active" aria-label="Light"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button>
+        <button aria-label="Dark"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/></svg></button>
+        <button aria-label="System"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></button>
+      </div>
+      <div class="legend">light</div>
+    </div>
+    <div class="d">
+      <div class="toggle dark">
+        <button aria-label="Light"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button>
+        <button class="active" aria-label="Dark"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/></svg></button>
+        <button aria-label="System"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></button>
+      </div>
+      <div class="legend" style="color:#9a9aa6">dark</div>
+    </div>
+  </div>
+</div></body></html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:9999px;
+    font-size:12px;font-weight:600;line-height:1;height:22px}
+  .b-default{background:hsl(var(--primary));color:hsl(var(--primary-foreground))}
+  .b-secondary{background:hsl(var(--secondary));color:hsl(var(--secondary-foreground))}
+  .b-outline{background:transparent;border:1px solid hsl(var(--border));color:hsl(var(--foreground))}
+  .b-destructive{background:hsl(var(--destructive));color:hsl(var(--destructive-foreground))}
+  .b-mint{background:hsl(var(--mint) / 0.12);color:hsl(var(--mint));border:1px solid hsl(var(--mint) / 0.3)}
+  .b-purple{background:hsl(var(--accent) / 0.12);color:hsl(var(--accent));border:1px solid hsl(var(--accent) / 0.35)}
+</style></head>
+<body><div class="card">
+  <div class="label">Badge · variants</div>
+  <div class="row" style="flex-wrap:wrap;gap:8px">
+    <span class="badge b-default">Streamer</span>
+    <span class="badge b-secondary">Draft</span>
+    <span class="badge b-outline">Pending</span>
+    <span class="badge b-destructive">Removed</span>
+    <span class="badge b-mint">$ Paid out</span>
+    <span class="badge b-purple">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>
+      Verified attribution
+    </span>
+  </div>
+  <div style="font-size:12px;color:hsl(var(--muted-foreground))">
+    Mint = money state · Purple = attribution / verification · Destructive = removal only.
+  </div>
+</div></body></html>
