@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Plus } from "lucide-react";
 
 import { Logo } from "@/components/shared/Logo";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
+import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/features/auth/components/UserMenu";
 import { createClient } from "@/lib/supabase/server";
 
@@ -36,6 +38,16 @@ export default async function DashboardLayout({
             <Logo className="h-7" />
           </Link>
           <div className="flex items-center gap-2">
+            <Button
+              asChild
+              size="sm"
+              className="hidden bg-accent text-accent-foreground hover:bg-accent/90 sm:inline-flex"
+            >
+              <Link href="/dashboard/clips/new">
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                New clip
+              </Link>
+            </Button>
             <ThemeToggle />
             <UserMenu handle={handle} email={user.email ?? null} avatarUrl={avatarUrl} />
           </div>

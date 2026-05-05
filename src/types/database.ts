@@ -182,6 +182,7 @@ export type Database = {
           processing_error: string | null
           source_channel_id: string | null
           source_creator_profile_id: string | null
+          source_kind: string | null
           source_platform: string | null
           source_url: string | null
           status: string
@@ -202,6 +203,7 @@ export type Database = {
           processing_error?: string | null
           source_channel_id?: string | null
           source_creator_profile_id?: string | null
+          source_kind?: string | null
           source_platform?: string | null
           source_url?: string | null
           status?: string
@@ -222,6 +224,7 @@ export type Database = {
           processing_error?: string | null
           source_channel_id?: string | null
           source_creator_profile_id?: string | null
+          source_kind?: string | null
           source_platform?: string | null
           source_url?: string | null
           status?: string

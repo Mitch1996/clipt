@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { ArrowRight, Tv } from "lucide-react";
+import { ArrowRight, Plus, Tv } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
@@ -68,21 +67,28 @@ export default async function DashboardPage() {
           </div>
         </Link>
 
-        <div className="flex flex-col rounded-md border border-dashed border-border bg-card/40 p-6">
-          <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-            Coming next
-          </span>
+        <Link
+          href="/dashboard/clips/new"
+          className="group flex flex-col rounded-md border border-border bg-card p-6 transition-colors hover:border-accent/40"
+        >
+          <div className="flex items-center justify-between">
+            <Plus className="h-6 w-6 text-accent" strokeWidth={1.75} />
+            <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+              ⌘N
+            </span>
+          </div>
           <h2 className="mt-6 text-lg font-semibold tracking-[-0.01em]">
             New clip from URL
           </h2>
           <p className="mt-2 flex-1 text-sm text-muted-foreground">
-            Paste a Twitch / YouTube / Kick URL and let the pipeline produce a
-            vertical, captioned, attribution-signed short. Lands in Prompt 1.5.
+            Paste a Twitch / YouTube / Kick URL — we&rsquo;ll pull, transcribe,
+            reframe, and sign attribution.
           </p>
-          <Button disabled variant="outline" className="mt-4 w-fit">
-            Soon
-          </Button>
-        </div>
+          <div className="mt-4 inline-flex items-center gap-1 text-sm text-foreground transition-colors group-hover:text-accent">
+            Open
+            <ArrowRight className="h-3.5 w-3.5" />
+          </div>
+        </Link>
       </div>
     </div>
   );
