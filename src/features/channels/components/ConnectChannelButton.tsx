@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 const PLATFORM_PATHS: Record<"twitch" | "youtube" | "kick", string | null> = {
   twitch: "/api/oauth/twitch/start",
-  youtube: null, // Prompt 1.3
+  youtube: "/api/oauth/youtube/start",
   kick: null, // Phase 2
 };
 

@@ -5,35 +5,42 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { useToast } from "@/hooks/use-toast";
 
+const PLATFORM_LABEL: Record<string, string> = {
+  twitch: "Twitch",
+  youtube: "YouTube",
+};
+
+type ToastVariant = "default" | "destructive";
+
 const MESSAGES: Record<
   string,
-  { title: string; description: string; variant?: "default" | "destructive" }
+  { title: (p: string) => string; description: (p: string) => string; variant?: ToastVariant }
 > = {
   ok: {
-    title: "Channel connected",
-    description: "We can now pull clips and metadata from this channel.",
+    title: () => "Channel connected",
+    description: (p) => `We can now pull clips and metadata from your ${p} channel.`,
   },
   denied: {
-    title: "Connection cancelled",
-    description: "You declined Twitch authorization. Try again any time.",
+    title: () => "Connection cancelled",
+    description: (p) => `You declined ${p} authorization. Try again any time.`,
     variant: "destructive",
   },
   state_mismatch: {
-    title: "Connection failed",
-    description:
+    title: () => "Connection failed",
+    description: () =>
       "Couldn't verify the OAuth round-trip. Start the flow again from this page.",
     variant: "destructive",
   },
   error: {
-    title: "Connection failed",
-    description: "Something went wrong on our side. Try again.",
+    title: () => "Connection failed",
+    description: () => "Something went wrong on our side. Try again.",
     variant: "destructive",
   },
 };
 
 /**
- * Reads ?twitch=<status>&detail=<x> from /dashboard/channels, fires a toast,
- * and strips the params from the URL so a refresh doesn't re-fire it.
+ * Reads `?twitch=<status>` or `?youtube=<status>` from /dashboard/channels,
+ * fires a toast, and strips the params so a refresh doesn't re-fire it.
  */
 export function ChannelsCallbackToast() {
   const router = useRouter();
@@ -43,27 +50,38 @@ export function ChannelsCallbackToast() {
 
   React.useEffect(() => {
     if (fired.current) return;
-    const status = search.get("twitch");
-    if (!status) return;
+
+    let platformKey: string | null = null;
+    let status: string | null = null;
+    for (const key of ["twitch", "youtube"]) {
+      const value = search.get(key);
+      if (value) {
+        platformKey = key;
+        status = value;
+        break;
+      }
+    }
+    if (!platformKey || !status) return;
 
     fired.current = true;
 
+    const platformLabel = PLATFORM_LABEL[platformKey] ?? platformKey;
     const detail = search.get("detail");
     const base = MESSAGES[status] ?? MESSAGES.error;
+    const baseDescription = base.description(platformLabel);
     const description =
       status === "ok" && detail
-        ? `${base.description} (${detail})`
+        ? `${baseDescription} (${detail})`
         : detail
-          ? `${base.description} — ${detail}`
-          : base.description;
+          ? `${baseDescription} — ${detail}`
+          : baseDescription;
 
     toast({
-      title: base.title,
+      title: base.title(platformLabel),
       description,
       variant: base.variant,
     });
 
-    // Strip query params without forcing a navigation.
     router.replace("/dashboard/channels", { scroll: false });
   }, [router, search, toast]);
 

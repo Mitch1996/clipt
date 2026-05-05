@@ -27,7 +27,7 @@ const PLATFORMS = [
     label: "YouTube",
     cta: "Connect YouTube",
     blurb: "Source long-form videos and post Shorts back to the channel.",
-    available: false,
+    available: true,
   },
   {
     key: "kick" as const,
