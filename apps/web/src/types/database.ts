@@ -176,6 +176,7 @@ export type Database = {
           captions_json: Json | null
           clipper_profile_id: string | null
           created_at: string
+          deleted_at: string | null
           duration_seconds: number | null
           earnings_cents: number
           id: string
@@ -194,12 +195,14 @@ export type Database = {
           vertical_video_r2_key: string | null
           video_r2_key: string | null
           view_count_total: number
+          visibility: string
         }
         Insert: {
           attribution_signature?: string | null
           captions_json?: Json | null
           clipper_profile_id?: string | null
           created_at?: string
+          deleted_at?: string | null
           duration_seconds?: number | null
           earnings_cents?: number
           id?: string
@@ -218,12 +221,14 @@ export type Database = {
           vertical_video_r2_key?: string | null
           video_r2_key?: string | null
           view_count_total?: number
+          visibility?: string
         }
         Update: {
           attribution_signature?: string | null
           captions_json?: Json | null
           clipper_profile_id?: string | null
           created_at?: string
+          deleted_at?: string | null
           duration_seconds?: number | null
           earnings_cents?: number
           id?: string
@@ -242,6 +247,7 @@ export type Database = {
           vertical_video_r2_key?: string | null
           video_r2_key?: string | null
           view_count_total?: number
+          visibility?: string
         }
         Relationships: [
           {

@@ -1,12 +1,19 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { inngest } from "@/inngest/client";
 import { createClient } from "@/lib/supabase/server";
 
-import { pasteUrlSchema, type PasteUrlInput } from "../schema";
+import {
+  captionsJsonSchema,
+  pasteUrlSchema,
+  updateClipMetaSchema,
+  type CaptionsJson,
+  type PasteUrlInput,
+  type UpdateClipMetaInput,
+} from "../schema";
 import { parseClipUrl } from "./parseClipUrl";
 
 export type CreateClipResult =
@@ -109,4 +116,123 @@ export async function createClipAndRedirect(input: PasteUrlInput) {
     redirect(`/dashboard/clips/${result.clipId}`);
   }
   return result;
+}
+
+// ─── Editor mutations (Prompt 1.13) ──────────────────────────────────
+
+export type SimpleResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Persist edited captions and re-fire the reframe pipeline so the
+ * burned-in captions on the vertical mp4 update.
+ */
+export async function updateClipCaptions(
+  clipId: string,
+  captionsJson: unknown,
+): Promise<SimpleResult> {
+  const parsed = captionsJsonSchema.safeParse(captionsJson);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid captions" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  // RLS gates the row to source-creator OR clipper. The update returns
+  // 0 rows for anyone else, which we surface as a forbidden error.
+  const { data, error } = await supabase
+    .from("clips")
+    .update({
+      captions_json: parsed.data as unknown as CaptionsJson,
+      status: "processing",
+      processing_error: null,
+    })
+    .eq("id", clipId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Not found or not yours" };
+
+  await inngest.send({
+    name: "clip/captions-updated",
+    data: { clipId },
+  });
+
+  revalidatePath(`/dashboard/clips/${clipId}`);
+  revalidateTag(`clip:${clipId}`);
+  return { ok: true };
+}
+
+/**
+ * Update the editable clip metadata (title + visibility). Both fields
+ * are optional — the action only writes the keys that are present.
+ */
+export async function updateClipMeta(
+  clipId: string,
+  input: UpdateClipMetaInput,
+): Promise<SimpleResult> {
+  const parsed = updateClipMetaSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  if (parsed.data.title === undefined && parsed.data.visibility === undefined) {
+    return { ok: true };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const patch: { title?: string; visibility?: string } = {};
+  if (parsed.data.title !== undefined) patch.title = parsed.data.title;
+  if (parsed.data.visibility !== undefined) patch.visibility = parsed.data.visibility;
+
+  const { data, error } = await supabase
+    .from("clips")
+    .update(patch)
+    .eq("id", clipId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Not found or not yours" };
+
+  revalidatePath(`/dashboard/clips/${clipId}`);
+  revalidateTag(`clip:${clipId}`);
+  return { ok: true };
+}
+
+/**
+ * Soft-delete: stamp `deleted_at`. The row stays in the DB and the R2
+ * artifacts stay in storage; a future cron purges blobs after a
+ * retention window.
+ */
+export async function softDeleteClip(clipId: string): Promise<SimpleResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const { data, error } = await supabase
+    .from("clips")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", clipId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Not found or not yours" };
+
+  revalidatePath(`/dashboard/clips`);
+  revalidateTag(`clip:${clipId}`);
+  return { ok: true };
 }

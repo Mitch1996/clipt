@@ -1,3 +1,4 @@
+import { processCaptionEdit } from "./processCaptionEdit";
 import { processClip } from "./processClip";
 
 /**
@@ -5,4 +6,4 @@ import { processClip } from "./processClip";
  * Inngest's `serve()` helper. Add new functions here when you create
  * them under src/inngest/functions/<name>.ts.
  */
-export const functions = [processClip];
+export const functions = [processClip, processCaptionEdit];

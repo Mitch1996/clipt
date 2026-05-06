@@ -1,0 +1,106 @@
+import { NonRetriableError } from "inngest";
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import { callReframe } from "@/lib/workers/videoWorker";
+
+import { ClipCaptionsUpdated, inngest } from "../client";
+
+/**
+ * processCaptionEdit — re-renders the vertical mp4 with edited captions.
+ *
+ * Triggered by `clip/captions-updated` after the editor saves new
+ * caption text. We skip transcription (the segments come straight from
+ * the editor) and reuse the existing attribution JWT from the row, so
+ * the cut-window and signing identity stay stable across edits.
+ *
+ * Flow:
+ *   1. Load the clip + captions + attribution + source-creator handle
+ *   2. Mark `processing` (UI shows skeleton over the preview)
+ *   3. Call worker reframe with the new captions key
+ *   4. Persist updated vertical R2 key (usually the same key, overwritten)
+ *   5. Mark `ready`
+ */
+export const processCaptionEdit = inngest.createFunction(
+  {
+    id: "process-caption-edit",
+    retries: 2,
+    triggers: [ClipCaptionsUpdated],
+  },
+  async ({ event, step }) => {
+    const { clipId } = event.data;
+    const supabase = createAdminClient();
+
+    const clip = await step.run("load-clip", async () => {
+      const { data, error } = await supabase
+        .from("clips")
+        .select(
+          "id, video_r2_key, attribution_signature, source_creator_profile_id",
+        )
+        .eq("id", clipId)
+        .maybeSingle();
+      if (error || !data) {
+        throw new NonRetriableError(`clip ${clipId} not found`);
+      }
+      if (!data.video_r2_key) {
+        throw new NonRetriableError(
+          `clip ${clipId} has no source video — caption edit not applicable`,
+        );
+      }
+      return data;
+    });
+
+    // Resolve handle for the burned-in badge — same lookup process-clip
+    // does on the original render. step.run results round-trip through
+    // JSON, so we return `null` (not `undefined`, which JSON drops)
+    // and narrow at the call site.
+    const creatorHandle: string | null = await step.run(
+      "load-creator-handle",
+      async () => {
+        if (!clip.source_creator_profile_id) return null;
+        const { data } = await supabase
+          .from("profiles")
+          .select("handle")
+          .eq("id", clip.source_creator_profile_id)
+          .maybeSingle();
+        return data?.handle ?? null;
+      },
+    );
+
+    await step.run("mark-processing", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({ status: "processing", processing_error: null })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
+
+    const reframed = await step.run("reframe", () =>
+      callReframe({
+        clipId,
+        sourceR2Key: clip.video_r2_key!,
+        captionsR2Key: `captions/${clipId}.json`,
+        style: "default",
+        creatorHandle: creatorHandle ?? undefined,
+        attributionToken: clip.attribution_signature ?? undefined,
+      }),
+    );
+
+    await step.run("persist-vertical", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({ vertical_video_r2_key: reframed.verticalR2Key })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
+
+    await step.run("mark-ready", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({ status: "ready", processing_error: null })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
+
+    return { clipId, status: "ready" };
+  },
+);

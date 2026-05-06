@@ -62,10 +62,12 @@ async function _getPublicClip(
   const { data: clip } = await supabase
     .from("clips")
     .select(
-      "id, title, duration_seconds, created_at, view_count_total, vertical_video_r2_key, captions_json, attribution_signature, source_creator_profile_id, clipper_profile_id",
+      "id, title, duration_seconds, created_at, view_count_total, vertical_video_r2_key, captions_json, attribution_signature, source_creator_profile_id, clipper_profile_id, visibility, deleted_at",
     )
     .eq("id", clipId)
     .eq("status", "ready")
+    .eq("visibility", "public")
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!clip) return null;
