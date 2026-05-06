@@ -146,12 +146,63 @@ running through the full pipeline.
   capture). Server actions and Inngest functions should prefer
   `putObject` so they don't pay the round-trip.
 
+### Verified attribution
+
+- Every `ready` clip carries an Ed25519-signed JWT in
+  `clips.attribution_signature`. Payload bundles the proof of origin:
+  `clipId`, `sourceChannelId`, `originalCreatorProfileId`,
+  `sourcePlatform`, `sourceUrl`, `sourceStartSec`, `sourceEndSec`,
+  `issuedAt`. Issuer = `clipt.tv`, audience = `clipt-attribution-v1`.
+- **Signing** is `signAttribution(payload)` in
+  `src/lib/attribution/sign.ts`. Private key lives in
+  `ATTRIBUTION_SIGNING_KEY` (base64-encoded PKCS8 DER). The Inngest
+  `process-clip` function calls it as the `sign-attribution` step, then
+  passes the JWT into the worker's reframe call so ffmpeg can embed it
+  in the output mp4 via `-metadata clipt_attribution=<jwt>`.
+- **Verification** is `verifyAttribution(token)` in
+  `src/lib/attribution/verify.ts`. Reads the public key from
+  `/.well-known/clipt-attribution-public-keys.json` (a JWKS array
+  supporting multiple historical keys) or the single-key file at
+  `/.well-known/clipt-attribution-public-key`. Both are static files
+  served from `apps/web/public/.well-known/`.
+
+#### Key rotation
+
+The signing key is rotated annually (or immediately if compromise is
+suspected). Procedure:
+
+1. **Generate the new keypair** with the script (writes the new
+   public-key files and prints the private key):
+   ```bash
+   node scripts/generate-attribution-key.mjs --write
+   ```
+   This prepends a new entry into
+   `apps/web/public/.well-known/clipt-attribution-public-keys.json`,
+   marking the old current key with `validUntil = <now ISO>`. The
+   single-key file at
+   `apps/web/public/.well-known/clipt-attribution-public-key` is
+   overwritten with the new key.
+2. **Paste the printed private key into the production env** as
+   `ATTRIBUTION_SIGNING_KEY`. Keep the old value somewhere recoverable
+   for at most 24h in case rollback is needed.
+3. **Deploy** — once the JWKS file is live, every clip signed AFTER
+   the rotation uses the new key. Verifiers walk the JWKS array, so
+   clips signed by the old key still verify until that key is removed
+   from the array.
+4. **Prune** old keys from the JWKS array only when no clip in the
+   wild was signed with that key — practically, remove a key on the
+   anniversary of the rotation that retired it.
+5. **Commit** the public-key file changes; the JWKS is the public
+   source of truth.
+
 ### Tests
 
 - **Unit / integration**: Vitest. Files live next to the code as
-  `*.test.ts` or under `__tests__/`. Vitest is set up in Phase 1+ — flag if
-  it's still missing when you need it.
-- **End-to-end**: Playwright, also Phase 1+.
+  `*.test.ts` or under `__tests__/`. Run via `pnpm test` (root) or
+  `pnpm --filter @clipt/web test`. The current attribution suite
+  exercises sign/verify round-trip, wrong-key rejection, tamper
+  detection, wrong-audience rejection, and JWKS-file format.
+- **End-to-end**: Playwright, lands later in Phase 1.
 
 ### Folder rules
 

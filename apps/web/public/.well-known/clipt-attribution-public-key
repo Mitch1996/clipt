@@ -1,0 +1,8 @@
+{
+  "crv": "Ed25519",
+  "x": "QWKho1xLps-E-YV3BPFd2n8RrgBTn0VEonG0Uagbz-Y",
+  "kty": "OKP",
+  "alg": "EdDSA",
+  "use": "sig",
+  "kid": "clipt-attr-2026-05-06"
+}

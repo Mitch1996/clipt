@@ -12,12 +12,15 @@
     "format": "pnpm --filter @clipt/web format",
     "format:check": "pnpm --filter @clipt/web format:check",
     "inngest:dev": "pnpm --filter @clipt/web inngest:dev",
+    "test": "pnpm --filter @clipt/web test",
+    "test:watch": "pnpm --filter @clipt/web test:watch",
     "db:push": "node scripts/db.mjs push",
     "db:reset": "node scripts/db.mjs reset",
     "db:diff": "node scripts/db.mjs diff",
     "db:types": "node scripts/db.mjs types"
   },
   "devDependencies": {
+    "jose": "^5.10.0",
     "supabase": "^2.98.2"
   },
   "pnpm": {

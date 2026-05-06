@@ -1,5 +1,6 @@
 import { NonRetriableError } from "inngest";
 
+import { signAttribution } from "@/lib/attribution/sign";
 import {
   SourceDownloadError,
   UnsupportedSourceError,
@@ -15,24 +16,24 @@ import { ClipRequested, inngest } from "../client";
  *
  * Triggered by `clip/requested` with `{ clipId }`. Pipeline stages:
  *
- *   1. Load clip from DB                              (this prompt)
- *   2. Update status to 'processing'                  (this prompt)
+ *   1. Load clip from DB
+ *   2. Mark processing
  *   3. Download source video                          → Prompt 1.7 ✓
- *   4. Generate captions                              → Prompt 1.9
- *   5. Reframe to vertical                            → Prompt 1.10
- *   6. Sign attribution                               → Prompt 1.11
- *   7. Update status to 'ready' or 'failed'           (this prompt)
+ *   4. Resolve source creator (link clip → channel)
+ *   5. Generate captions                              → Prompt 1.9 (stub today)
+ *   6. Sign attribution JWT                           → Prompt 1.11 ✓
+ *   7. Reframe to vertical (embeds the JWT)           → Prompt 1.10 (stub today)
+ *   8. Mark ready
  *
- * Each step is wrapped in `step.run()` so failures retry in isolation
- * when we replace the stub with real work.
+ * The order matters: signing happens BEFORE reframe so the worker can
+ * embed the attribution JWT into the mp4 via ffmpeg's
+ * `-metadata clipt_attribution=<jwt>` flag.
  *
  * Errors:
  *   - `UnsupportedSourceError` (Twitch VOD, YouTube) — phase scoping;
  *     mark `failed` with the user-facing message and DON'T retry.
  *   - `SourceDownloadError` — supported source but the fetch failed
- *     (deleted clip, CDN hiccup). Mark `failed` and DON'T retry the
- *     whole function (Inngest still retries the step `retries` times
- *     before bubbling).
+ *     (deleted clip, CDN hiccup). Mark `failed` and DON'T retry.
  *   - Any other error — let Inngest retry per the function's `retries`
  *     setting; we'll see it in the dev UI's timeline.
  */
@@ -50,7 +51,7 @@ export const processClip = inngest.createFunction(
     const clip = await step.run("load-clip", async () => {
       const { data, error } = await supabase
         .from("clips")
-        .select("id, status, source_url, source_platform, source_kind")
+        .select("id, status, source_url, source_platform, source_kind, source_channel_id, source_creator_profile_id")
         .eq("id", clipId)
         .single();
       if (error || !data) throw new Error(`clip ${clipId} not found`);
@@ -66,25 +67,20 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 3. Download the source. UnsupportedSourceError + SourceDownloadError
-    //    are *terminal* — fail the row immediately and stop the run.
+    // 3. Download. UnsupportedSourceError + SourceDownloadError are
+    //    *terminal* — fail the row immediately and stop the run.
     let downloaded;
     try {
       downloaded = await step.run("download-source", () =>
         downloadSource(clipId, clip.source_url ?? ""),
       );
     } catch (err) {
-      const cause =
-        err instanceof Error && (err as Error & { cause?: unknown }).cause
-          ? (err as Error & { cause?: unknown }).cause
-          : err;
       const isTerminal =
-        cause instanceof UnsupportedSourceError ||
-        cause instanceof SourceDownloadError ||
-        // Inngest may wrap our error in its own type; match by name too
-        (err instanceof Error &&
-          (err.name === "UnsupportedSourceError" ||
-            err.name === "SourceDownloadError"));
+        err instanceof Error &&
+        (err.name === "UnsupportedSourceError" ||
+          err.name === "SourceDownloadError" ||
+          err instanceof UnsupportedSourceError ||
+          err instanceof SourceDownloadError);
 
       if (isTerminal) {
         const message = err instanceof Error ? err.message : String(err);
@@ -94,15 +90,8 @@ export const processClip = inngest.createFunction(
             .update({ status: "failed", processing_error: message })
             .eq("id", clipId);
         });
-        // NonRetriableError tells Inngest to stop the function without
-        // retrying — we've already persisted the failure.
         throw new NonRetriableError(message);
       }
-
-      // Generic failure — let Inngest's retry policy handle it. If it
-      // exhausts retries the run will end in error and the row will be
-      // stuck in 'processing'; a separate sweeper could rectify, but
-      // that's out of scope today.
       throw err;
     }
 
@@ -119,7 +108,38 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 4. Transcribe via worker (stub today — real Whisper in Prompt 1.9).
+    // 4. Resolve source-creator profile via the channels table. If the
+    //    streamer has connected their channel to Clipt we link the clip
+    //    to their profile; otherwise leave both fields null and revisit
+    //    if they connect later.
+    const resolved = await step.run("resolve-source-creator", async () => {
+      if (!downloaded.sourceCreator) return { channelId: null, profileId: null };
+      const { data } = await supabase
+        .from("channels")
+        .select("id, owner_id")
+        .eq("platform", clip.source_platform!)
+        .eq("platform_user_id", downloaded.sourceCreator.platformUserId)
+        .maybeSingle();
+      return {
+        channelId: data?.id ?? null,
+        profileId: data?.owner_id ?? null,
+      };
+    });
+
+    if (resolved.channelId || resolved.profileId) {
+      await step.run("persist-source-creator", async () => {
+        const { error } = await supabase
+          .from("clips")
+          .update({
+            source_channel_id: resolved.channelId,
+            source_creator_profile_id: resolved.profileId,
+          })
+          .eq("id", clipId);
+        if (error) throw error;
+      });
+    }
+
+    // 5. Transcribe via worker (stub today — real Whisper in Prompt 1.9).
     const transcribed = await step.run("transcribe", () =>
       callTranscribe({
         clipId,
@@ -137,9 +157,34 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 5. Reframe to vertical (stub today — real MediaPipe + ffmpeg in
-    //    Prompt 1.10). Attribution token will get embedded into mp4
-    //    metadata once Prompt 1.11 mints it; stub ignores it for now.
+    // 6. Sign attribution. The token is the cryptographic proof of
+    //    origin — source channel + creator + URL + cut window — and is
+    //    persisted on the row AND embedded in the mp4 metadata by
+    //    reframe.
+    const attributionToken = await step.run("sign-attribution", () =>
+      signAttribution({
+        clipId,
+        sourceChannelId: resolved.channelId,
+        originalCreatorProfileId: resolved.profileId,
+        sourcePlatform: clip.source_platform ?? "unknown",
+        sourceUrl: clip.source_url ?? "",
+        sourceStartSec: 0,
+        sourceEndSec: downloaded.durationSeconds ?? 0,
+        issuedAt: new Date().toISOString(),
+      }),
+    );
+
+    await step.run("persist-attribution", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({ attribution_signature: attributionToken })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
+
+    // 7. Reframe (stub today — real MediaPipe + ffmpeg in Prompt 1.10).
+    //    Pass the attribution token so the worker can ffmpeg it into
+    //    `-metadata clipt_attribution=<jwt>`.
     const reframed = await step.run("reframe", () =>
       callReframe({
         clipId,
@@ -147,6 +192,7 @@ export const processClip = inngest.createFunction(
         captionsR2Key: transcribed.captionsR2Key,
         style: "default",
         creatorHandle: downloaded.sourceCreator?.platformLogin,
+        attributionToken,
       }),
     );
 
@@ -160,10 +206,7 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 6. TODO Prompt 1.11 — sign attribution JWT
-    await step.run("todo-sign-attribution", async () => ({ ok: true }));
-
-    // 7. Mark ready
+    // 8. Mark ready
     await step.run("mark-ready", async () => {
       const { error } = await supabase
         .from("clips")
