@@ -1,0 +1,46 @@
+# Fly.io config for the Clipt video worker.
+#
+# Generated to match the Prompt 1.8 contract:
+#   - 1 dedicated CPU, 4 GB RAM
+#   - autoscale 0..3 (cold-start when idle, scales out under load)
+#   - HTTPS-only, internal port 8000
+#
+# Required Fly secrets (set via `fly secrets set`):
+#   WORKER_HMAC_KEY            shared with the Next side; signs JWTs
+#   STORAGE_ENDPOINT_URL       e.g. https://<project>.supabase.co/storage/v1/s3
+#                              or the Cloudflare R2 endpoint
+#   STORAGE_ACCESS_KEY_ID
+#   STORAGE_SECRET_ACCESS_KEY
+#   STORAGE_BUCKET             default 'clipt-media'
+#   STORAGE_REGION             default 'auto' (R2) or 'eu-west-1' (Supabase)
+
+app = "clipt-video-worker"
+primary_region = "ams"  # Amsterdam — closest to the Supabase eu-west-1 project
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/healthz"
+
+[[vm]]
+  size = "performance-1x"
+  memory = "4gb"
+  cpu_kind = "performance"
+  cpus = 1

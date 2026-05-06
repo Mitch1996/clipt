@@ -1,0 +1,25 @@
+# API
+fastapi>=0.115,<0.118
+uvicorn[standard]>=0.32,<0.36
+pydantic>=2.11,<3   # >=2.11 has Python 3.14 wheels for pydantic-core
+
+# Auth — JWT verification on every request
+python-jose[cryptography]>=3.3,<4
+
+# Object storage (S3-compatible — works with Cloudflare R2 + Supabase
+# Storage's S3 endpoint).
+boto3>=1.36,<2
+
+# HTTP client (used by jobs to fetch source assets when not via boto3).
+httpx>=0.28,<0.30
+
+# Source-video downloads (Twitch VOD + YouTube). Heavy, but kept here so
+# the worker can resolve and stream-pipe in Phase 2.
+yt-dlp>=2025.10
+
+# ML deps land in Prompt 1.9 (faster-whisper) and Prompt 1.10
+# (mediapipe). Pinning them now would balloon the Docker image even
+# though the stubs don't import them yet, so they're commented:
+# faster-whisper>=1.0
+# mediapipe>=0.10
+# ffmpeg-python>=0.2

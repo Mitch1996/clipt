@@ -17,7 +17,12 @@
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
-const ENV_PATH = ".env.local";
+// .env.local lives with the Next app (apps/web/.env.local) since Next's
+// own dev server reads from there. Fall back to a root-level copy if
+// someone keeps one there for cross-cutting use.
+const ENV_PATH = existsSync("apps/web/.env.local")
+  ? "apps/web/.env.local"
+  : ".env.local";
 
 if (!existsSync(ENV_PATH)) {
   console.error(`db.mjs: ${ENV_PATH} not found. Run from repo root.`);
@@ -107,8 +112,8 @@ async function main() {
         console.error("db.mjs: gen types output had no `export ` block");
         process.exit(1);
       }
-      writeFileSync("src/types/database.ts", out.slice(idx));
-      console.log("Wrote src/types/database.ts");
+      writeFileSync("apps/web/src/types/database.ts", out.slice(idx));
+      console.log("Wrote apps/web/src/types/database.ts");
       break;
     }
     default:

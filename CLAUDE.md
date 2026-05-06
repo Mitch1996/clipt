@@ -155,38 +155,73 @@ running through the full pipeline.
 
 ### Folder rules
 
+The repo is a **pnpm workspace** (`pnpm-workspace.yaml` at root) with
+two packages:
+
 ```
-src/
-  app/                       routes (App Router) — thin shells that delegate
-    api/                     route handlers (webhooks, OAuth, Inngest only)
-    (dashboard)/             grouped routes for the authed product surface
-    dev/                     developer-only utility routes (/dev/health, etc.)
-  components/
-    ui/                      shadcn primitives (vendored manually)
-    shared/                  project-shared (Logo, ThemeToggle, ThemeProvider)
-  features/<feature>/        feature-scoped module:
-    components/              client + server components for the feature
-    server/                  server actions
-    schema.ts                zod schemas (shared between client + server)
-    types.ts                 feature-local TS types
-  hooks/                     reusable client hooks (e.g. use-toast)
-  lib/                       cross-cutting utilities + clients
-    supabase/                Supabase client factories
-    storage/                 R2 helpers (Phase 1.6)
-    crypto/                  encryption + signing helpers (Phase 1.2 / 1.11)
-    workers/                 typed clients to call Fly workers (Phase 1.8)
-    entitlements.ts          plan-gating logic (Phase 1.15)
-  inngest/                   Inngest client + functions
-  types/                     shared TS types (database.ts is generated)
-supabase/migrations/         SQL migrations
-scripts/                     dev tooling (db.mjs, etc.)
-public/                      static assets
-_prompt-pack/                the source-of-truth playbook (don't edit)
-_design-handoff/             Claude Design exports (reference only)
+.                              repo root — supabase + scripts + docs live here
+├── pnpm-workspace.yaml        declares packages: ['apps/*']
+├── package.json               root scripts that delegate via pnpm --filter
+├── supabase/migrations/       SQL migrations (project-wide, single source)
+├── scripts/                   dev tooling (db.mjs reads apps/web/.env.local)
+├── _prompt-pack/              the source-of-truth playbook (don't edit)
+├── _design-handoff/           Claude Design exports (reference only)
+│
+├── apps/web/                  Next.js 15 app (the @clipt/web package)
+│   ├── src/
+│   │   ├── app/               routes (App Router) — thin shells
+│   │   │   ├── api/           route handlers (webhooks, OAuth, Inngest only)
+│   │   │   ├── (dashboard)/   grouped routes for the authed product surface
+│   │   │   └── dev/           developer-only utility routes (/dev/health, etc.)
+│   │   ├── components/{ui,shared}/
+│   │   ├── features/<feature>/{components,server,schema.ts,types.ts}
+│   │   ├── hooks/             reusable client hooks
+│   │   ├── lib/               cross-cutting utilities + clients
+│   │   │   ├── supabase/      Supabase client factories
+│   │   │   ├── storage/       R2 facade (Supabase Storage backed today)
+│   │   │   ├── crypto/        encryption + signing helpers
+│   │   │   └── workers/       typed clients for the Python worker (videoWorker.ts)
+│   │   ├── inngest/           Inngest client + functions
+│   │   └── types/             shared TS types (database.ts is generated)
+│   ├── public/                static assets
+│   ├── .env.local             web-app secrets (gitignored). The Python
+│   │                          worker reads STORAGE_* from here too via
+│   │                          its own env loader; only WORKER_HMAC_KEY
+│   │                          must be the same on both sides.
+│   └── package.json           name: "@clipt/web"
+│
+└── workers/video/             Python FastAPI service (the video worker)
+    ├── app/
+    │   ├── main.py            FastAPI entry; mounts /healthz + /jobs/*
+    │   ├── auth.py            JWT verification (HS256, audience clipt-video-worker)
+    │   ├── config.py          env loader (WORKER_HMAC_KEY + STORAGE_*)
+    │   ├── storage.py         boto3 S3 helper (works with R2 + Supabase Storage)
+    │   └── jobs/              one module per endpoint:
+    │       ├── transcribe.py  Whisper captions      (stub today, Prompt 1.9)
+    │       ├── reframe.py     9:16 + caption burn   (stub today, Prompt 1.10)
+    │       └── download_youtube.py  yt-dlp pull     (stub today, Phase 2)
+    ├── Dockerfile             python:3.12-slim + ffmpeg + tini
+    ├── fly.toml               app=clipt-video-worker, region=ams, perf-1x/4GB
+    └── requirements.txt
 ```
 
-Routes in `src/app/` are thin: they import a feature's components / actions
-and arrange them. They don't contain business logic.
+Routes in `apps/web/src/app/` are thin: they import a feature's
+components / actions and arrange them. No business logic.
+
+**Running locally** (three terminals from the repo root):
+```
+pnpm dev                                              # Next on :3006
+pnpm inngest:dev                                      # Inngest dashboard on :8288
+cd workers/video && WORKER_HMAC_KEY=… STORAGE_*=… \   # FastAPI worker on :8000
+  ./.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+The worker is **not yet deployed** to Fly.io — the account requires
+billing info we haven't added (same gate that blocked Cloudflare R2).
+The Dockerfile + `fly.toml` are deploy-ready; when billing lands, run
+`flyctl apps create clipt-video-worker --org personal && flyctl secrets set …
+&& flyctl deploy` and update `VIDEO_WORKER_URL` in
+`apps/web/.env.local` to point at the public Fly URL.
 
 ### Naming
 

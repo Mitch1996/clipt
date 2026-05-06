@@ -15,8 +15,21 @@ export const metadata = {
 };
 
 async function loadConventions() {
-  const filePath = path.join(process.cwd(), "CLAUDE.md");
-  return readFile(filePath, "utf8");
+  // CLAUDE.md lives at the workspace root (one above apps/web/). Try the
+  // workspace path first; fall back to cwd for the (legacy) single-package
+  // layout in case someone runs against an older snapshot.
+  const candidates = [
+    path.join(process.cwd(), "..", "..", "CLAUDE.md"),
+    path.join(process.cwd(), "CLAUDE.md"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate, "utf8");
+    } catch {
+      // try next
+    }
+  }
+  throw new Error("CLAUDE.md not found");
 }
 
 export default async function ConventionsPage() {

@@ -6,6 +6,7 @@ import {
   downloadSource,
 } from "@/features/clips/server/downloadSource";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { callReframe, callTranscribe } from "@/lib/workers/videoWorker";
 
 import { ClipRequested, inngest } from "../client";
 
@@ -118,11 +119,46 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 4. TODO Prompt 1.9 — transcribe via worker
-    await step.run("todo-transcribe", async () => ({ ok: true }));
+    // 4. Transcribe via worker (stub today — real Whisper in Prompt 1.9).
+    const transcribed = await step.run("transcribe", () =>
+      callTranscribe({
+        clipId,
+        sourceR2Key: downloaded.videoR2Key,
+      }),
+    );
 
-    // 5. TODO Prompt 1.10 — reframe to vertical
-    await step.run("todo-reframe", async () => ({ ok: true }));
+    await step.run("persist-captions", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({
+          captions_json: transcribed.captionsJson as never,
+        })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
+
+    // 5. Reframe to vertical (stub today — real MediaPipe + ffmpeg in
+    //    Prompt 1.10). Attribution token will get embedded into mp4
+    //    metadata once Prompt 1.11 mints it; stub ignores it for now.
+    const reframed = await step.run("reframe", () =>
+      callReframe({
+        clipId,
+        sourceR2Key: downloaded.videoR2Key,
+        captionsR2Key: transcribed.captionsR2Key,
+        style: "default",
+        creatorHandle: downloaded.sourceCreator?.platformLogin,
+      }),
+    );
+
+    await step.run("persist-reframe-meta", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({
+          vertical_video_r2_key: reframed.verticalR2Key,
+        })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
 
     // 6. TODO Prompt 1.11 — sign attribution JWT
     await step.run("todo-sign-attribution", async () => ({ ok: true }));
