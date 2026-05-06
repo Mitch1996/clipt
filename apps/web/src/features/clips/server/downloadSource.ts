@@ -115,7 +115,20 @@ async function downloadTwitchClip(
 
   const buf = await streamToBuffer(meta.mp4Url);
   const key = StorageKeys.source(clipId);
-  await putObject(key, buf, "video/mp4");
+  try {
+    await putObject(key, buf, "video/mp4");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (
+      message.toLowerCase().includes("exceeded the maximum") ||
+      message.toLowerCase().includes("payload too large")
+    ) {
+      throw new SourceDownloadError(
+        `Source mp4 is ${(buf.length / 1024 / 1024).toFixed(1)} MB — over the storage cap. Pick a shorter clip or a lower-quality source.`,
+      );
+    }
+    throw err;
+  }
 
   // Persist the broadcaster on the clip row so the public clip page can
   // render @<login>. We also flag a TODO: if a profile exists for this
@@ -151,7 +164,20 @@ async function downloadKickClip(
 
   const buf = await streamToBuffer(meta.mp4Url);
   const key = StorageKeys.source(clipId);
-  await putObject(key, buf, "video/mp4");
+  try {
+    await putObject(key, buf, "video/mp4");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (
+      message.toLowerCase().includes("exceeded the maximum") ||
+      message.toLowerCase().includes("payload too large")
+    ) {
+      throw new SourceDownloadError(
+        `Source mp4 is ${(buf.length / 1024 / 1024).toFixed(1)} MB — over the storage cap. Pick a shorter clip or a lower-quality source.`,
+      );
+    }
+    throw err;
+  }
 
   await persistTitle(clipId, meta.title);
 

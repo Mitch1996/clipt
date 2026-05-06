@@ -126,18 +126,19 @@ export const processClip = inngest.createFunction(
       };
     });
 
-    if (resolved.channelId || resolved.profileId) {
-      await step.run("persist-source-creator", async () => {
-        const { error } = await supabase
-          .from("clips")
-          .update({
-            source_channel_id: resolved.channelId,
-            source_creator_profile_id: resolved.profileId,
-          })
-          .eq("id", clipId);
-        if (error) throw error;
-      });
-    }
+    // Always overwrite, even when both are null — the JWT carries the
+    // resolved values, so the row must match (avoids a stale value
+    // surviving from createClipFromUrl).
+    await step.run("persist-source-creator", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({
+          source_channel_id: resolved.channelId,
+          source_creator_profile_id: resolved.profileId,
+        })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
 
     // 5. Transcribe via worker (stub today — real Whisper in Prompt 1.9).
     const transcribed = await step.run("transcribe", () =>

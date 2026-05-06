@@ -228,11 +228,19 @@ export async function fetchTwitchClipMeta(slug: string): Promise<TwitchClipMeta 
     throw new Error("twitch gql returned no videoQualities (clip private or unavailable)");
   }
 
-  // Pick highest resolution. Quality strings are "1080" / "720" / "480"…
-  const sorted = [...clip.videoQualities].sort(
+  // Quality preference. Twitch returns strings like "1080" / "720" /
+  // "480" / "360". 1080p clips routinely break Supabase Storage's
+  // 50 MB free-tier per-file ceiling, so we prefer **720 or lower**:
+  // pick the highest quality that's <= 720, falling back to the
+  // lowest available if nothing under 720 exists. The vertical
+  // reframe in Prompt 1.10 outputs 1080×1920, but cropping a 720p
+  // source is plenty since we're already throwing away most of the
+  // horizontal pixels for a 9:16 frame.
+  const ranked = [...clip.videoQualities].sort(
     (a, b) => Number(b.quality) - Number(a.quality),
   );
-  const best = sorted[0];
+  const best =
+    ranked.find((q) => Number(q.quality) <= 720) ?? ranked[ranked.length - 1];
 
   // The CDN refuses to serve without the access token query params.
   const mp4Url = clip.playbackAccessToken

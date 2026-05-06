@@ -43,28 +43,20 @@ export async function createClipFromUrl(
 
   const { canonicalUrl, platform, kind } = detection.value;
 
-  // Try to find an existing connected channel of the same platform owned
-  // by the current user — lets us light up the clip → channel link from
-  // day one. If none, source_channel_id stays null until the source
-  // creator is actually identified by Prompt 1.7's metadata fetch.
-  const { data: ownedChannel } = await supabase
-    .from("channels")
-    .select("id")
-    .eq("owner_id", user.id)
-    .eq("platform", platform)
-    .not("access_token_encrypted", "is", null)
-    .maybeSingle();
-
+  // Insert with the clipper but DON'T pre-fill source_channel_id —
+  // that's the *broadcaster's* connected channel, which we can only
+  // resolve after the download step pulls the broadcaster's
+  // platform_user_id. Pre-filling with the clipper's own channel
+  // (Prompt 1.5's original logic) was wrong: most paste-URL flows
+  // clip from streamers who aren't the clipper. The Inngest pipeline's
+  // `resolve-source-creator` step now sets both source_channel_id +
+  // source_creator_profile_id consistently.
   const { data: clip, error: insertErr } = await supabase
     .from("clips")
     .insert({
       source_url: canonicalUrl,
       source_platform: platform,
       source_kind: kind,
-      source_channel_id: ownedChannel?.id ?? null,
-      // The current user is the *clipper* (the person who initiated this
-      // clip). source_creator_profile_id stays null until the pipeline
-      // resolves the original streamer in a later prompt.
       clipper_profile_id: user.id,
       status: "pending",
     })
