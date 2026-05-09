@@ -3,8 +3,13 @@ import { Suspense } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ChannelsCallbackToast } from "@/features/channels/components/ChannelsCallbackToast";
-import { ConnectChannelButton } from "@/features/channels/components/ConnectChannelButton";
+import {
+  ConnectChannelButton,
+  type ChannelPlatform,
+} from "@/features/channels/components/ConnectChannelButton";
 import { DisconnectButton } from "@/features/channels/components/DisconnectButton";
+import { isInstagramConfigured } from "@/features/channels/server/instagram";
+import { isTikTokConfigured } from "@/features/channels/server/tiktok";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database";
 
@@ -14,29 +19,62 @@ export const metadata = {
 
 type Channel = Database["public"]["Tables"]["channels"]["Row"];
 
-const PLATFORMS = [
-  {
-    key: "twitch" as const,
-    label: "Twitch",
-    cta: "Connect Twitch",
-    blurb: "Pull source clips, list VODs, and authenticate live-stream access.",
-    available: true,
-  },
-  {
-    key: "youtube" as const,
-    label: "YouTube",
-    cta: "Connect YouTube",
-    blurb: "Source long-form videos and post Shorts back to the channel.",
-    available: true,
-  },
-  {
-    key: "kick" as const,
-    label: "Kick",
-    cta: "Coming soon",
-    blurb: "Live + clip sourcing once Kick OAuth lands in Phase 2.",
-    available: false,
-  },
-];
+interface PlatformTile {
+  key: ChannelPlatform;
+  label: string;
+  cta: string;
+  blurb: string;
+  /** Render the Connect button at all? false = "Coming soon" tile. */
+  available: boolean;
+  /** Per-tile note explaining why it's not available, if relevant. */
+  note?: string;
+}
+
+function platformTiles(): PlatformTile[] {
+  return [
+    {
+      key: "twitch",
+      label: "Twitch",
+      cta: "Connect Twitch",
+      blurb: "Pull source clips, list VODs, and authenticate live-stream access.",
+      available: true,
+    },
+    {
+      key: "youtube",
+      label: "YouTube",
+      cta: "Connect YouTube",
+      blurb: "Source long-form videos and post Shorts back to the channel.",
+      available: true,
+    },
+    {
+      key: "tiktok",
+      label: "TikTok",
+      cta: isTikTokConfigured() ? "Connect TikTok" : "Coming soon",
+      blurb: "Post vertical clips as TikTok videos.",
+      available: isTikTokConfigured(),
+      note: isTikTokConfigured()
+        ? undefined
+        : "Add TIKTOK_CLIENT_KEY + TIKTOK_CLIENT_SECRET in .env.local. Sandbox accounts can post without app-audit; production needs the Content Posting API approved.",
+    },
+    {
+      key: "instagram",
+      label: "Instagram",
+      cta: isInstagramConfigured() ? "Connect Instagram" : "Coming soon",
+      blurb: "Post Reels via the Meta Graph API.",
+      available: isInstagramConfigured(),
+      note: isInstagramConfigured()
+        ? "Posting Reels needs an IG Business / Creator account linked to a Facebook Page you manage."
+        : "Add INSTAGRAM_CLIENT_ID + INSTAGRAM_CLIENT_SECRET in .env.local. Meta app review can take days for instagram_content_publish.",
+    },
+    {
+      key: "kick",
+      label: "Kick",
+      cta: "Coming soon",
+      blurb: "Live + clip sourcing once Kick OAuth lands in Phase 2.",
+      available: false,
+    },
+  ];
+}
 
 export default async function ChannelsPage() {
   const supabase = await createClient();
@@ -48,6 +86,7 @@ export default async function ChannelsPage() {
     .order("connected_at", { ascending: false });
 
   const channels = (rows ?? []) as Channel[];
+  const tiles = platformTiles();
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
@@ -68,8 +107,8 @@ export default async function ChannelsPage() {
 
       <Separator className="my-10" />
 
-      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-border bg-border md:grid-cols-3">
-        {PLATFORMS.map((p) => {
+      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-border bg-border md:grid-cols-2 lg:grid-cols-3">
+        {tiles.map((p) => {
           const row = channels.find(
             (c) => c.platform === p.key && c.access_token_encrypted,
           );
@@ -92,6 +131,10 @@ export default async function ChannelsPage() {
               </div>
 
               <p className="mt-3 flex-1 text-sm text-muted-foreground">{p.blurb}</p>
+
+              {p.note && !connected && (
+                <p className="mt-3 text-xs text-muted-foreground/80">{p.note}</p>
+              )}
 
               {connected && row ? (
                 <div className="mt-6 space-y-3 text-sm">
@@ -131,6 +174,7 @@ export default async function ChannelsPage() {
                   <ConnectChannelButton
                     platform={p.key}
                     alreadyConnected={false}
+                    disabled={!p.available}
                   >
                     {p.cta}
                   </ConnectChannelButton>

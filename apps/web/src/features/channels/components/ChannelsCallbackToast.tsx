@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 const PLATFORM_LABEL: Record<string, string> = {
   twitch: "Twitch",
   youtube: "YouTube",
+  tiktok: "TikTok",
+  instagram: "Instagram",
 };
 
 type ToastVariant = "default" | "destructive";
@@ -29,6 +31,12 @@ const MESSAGES: Record<
     title: () => "Connection failed",
     description: () =>
       "Couldn't verify the OAuth round-trip. Start the flow again from this page.",
+    variant: "destructive",
+  },
+  not_configured: {
+    title: (p) => `${p} sign-in not set up`,
+    description: (p) =>
+      `Add the ${p} OAuth keys to .env.local first (see .env.example).`,
     variant: "destructive",
   },
   error: {
@@ -53,7 +61,7 @@ export function ChannelsCallbackToast() {
 
     let platformKey: string | null = null;
     let status: string | null = null;
-    for (const key of ["twitch", "youtube"]) {
+    for (const key of ["twitch", "youtube", "tiktok", "instagram"]) {
       const value = search.get(key);
       if (value) {
         platformKey = key;

@@ -17,6 +17,12 @@ import {
   type ClipStatus,
   type ClipVisibility,
 } from "@/features/clips/schema";
+import {
+  ClipPostsList,
+  type ClipPostRow,
+} from "@/features/publishing/components/ClipPostsList";
+import { PostDialog } from "@/features/publishing/components/PostDialog";
+import type { PublishPlatform } from "@/features/publishing/schema";
 import { StorageKeys, getSignedDownloadUrl } from "@/lib/storage/r2";
 import { createClient } from "@/lib/supabase/server";
 
@@ -59,6 +65,33 @@ export default async function ClipDetailPage({
   const thumbnailUrl = isReady
     ? await tryGetSignedUrl(StorageKeys.thumbnail(clip.id))
     : null;
+
+  // Connected publish channels + existing posts.
+  const { data: connectedChannelRows } = await supabase
+    .from("channels")
+    .select("platform")
+    .not("access_token_encrypted", "is", null);
+
+  const connectedPlatforms = new Set(
+    (connectedChannelRows ?? []).map((r) => r.platform),
+  );
+  // YouTube Shorts piggy-backs on a connected youtube channel.
+  const canPostTo: Record<PublishPlatform, boolean> = {
+    youtube_shorts: connectedPlatforms.has("youtube"),
+    tiktok: connectedPlatforms.has("tiktok"),
+    instagram: connectedPlatforms.has("instagram"),
+  };
+
+  const { data: postRows } = await supabase
+    .from("clip_posts")
+    .select(
+      "id, platform, platform_post_id, view_count, like_count, posted_at, scheduled_for, last_synced_at",
+    )
+    .eq("clip_id", clip.id)
+    .order("created_at", { ascending: false });
+
+  const posts = (postRows ?? []) as ClipPostRow[];
+  const totalViews = posts.reduce((acc, p) => acc + (p.view_count || 0), 0);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
@@ -115,6 +148,9 @@ export default async function ClipDetailPage({
           videoUrl={videoUrl}
           thumbnailUrl={thumbnailUrl}
           captions={captions}
+          canPostTo={canPostTo}
+          posts={posts}
+          totalViews={totalViews}
         />
       )}
     </div>
@@ -128,6 +164,9 @@ function ReadyEditor({
   videoUrl,
   thumbnailUrl,
   captions,
+  canPostTo,
+  posts,
+  totalViews,
 }: {
   clipId: string;
   title: string;
@@ -135,6 +174,9 @@ function ReadyEditor({
   videoUrl: string;
   thumbnailUrl: string | null;
   captions: CaptionsJson;
+  canPostTo: Record<PublishPlatform, boolean>;
+  posts: ClipPostRow[];
+  totalViews: number;
 }) {
   const publicUrl = `${APP_URL}/c/${clipId}`;
 
@@ -155,7 +197,7 @@ function ReadyEditor({
           unlisted={visibility === "unlisted"}
         />
 
-        <PostButtons />
+        <PostButtons clipId={clipId} title={title} canPostTo={canPostTo} />
       </div>
 
       <div className="min-w-0 space-y-10">
@@ -171,8 +213,12 @@ function ReadyEditor({
           <CaptionEditor clipId={clipId} initialCaptions={captions} />
         </Section>
 
+        <Section title="Posts">
+          <ClipPostsList posts={posts} />
+        </Section>
+
         <Section title="Analytics">
-          <AnalyticsCards />
+          <AnalyticsCards totalViews={totalViews} />
         </Section>
 
         <Section title="Danger zone">
@@ -209,41 +255,72 @@ function Section({
   );
 }
 
-function PostButtons() {
-  // Real posting wires up in Prompt 1.14 (TikTok / IG / YT Shorts OAuth +
-  // upload). For now these are placeholders that surface the connect
-  // requirement so the editor surface still feels complete.
+function PostButtons({
+  clipId,
+  title,
+  canPostTo,
+}: {
+  clipId: string;
+  title: string;
+  canPostTo: Record<PublishPlatform, boolean>;
+}) {
   const items = [
-    { label: "TikTok", icon: Music2 },
-    { label: "Instagram Reels", icon: Camera },
-    { label: "YouTube Shorts", icon: Film },
-  ] as const;
+    { platform: "youtube_shorts", label: "YouTube Shorts", icon: Film },
+    { platform: "tiktok", label: "TikTok", icon: Music2 },
+    { platform: "instagram", label: "Instagram Reels", icon: Camera },
+  ] as const satisfies ReadonlyArray<{
+    platform: PublishPlatform;
+    label: string;
+    icon: typeof Film;
+  }>;
+
   return (
     <div className="space-y-2">
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
         Post to
       </p>
-      {items.map(({ label, icon: Icon }) => (
-        <Button
-          key={label}
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled
-          className="w-full justify-start"
-        >
-          <Icon className="mr-1.5 h-3.5 w-3.5" />
-          Connect {label} to enable
-        </Button>
-      ))}
+      {items.map(({ platform, label, icon: Icon }) => {
+        const enabled = canPostTo[platform];
+        return (
+          <PostDialog
+            key={platform}
+            clipId={clipId}
+            platform={platform}
+            disabled={!enabled}
+            initialCaption={title}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!enabled}
+              className="w-full justify-start"
+            >
+              <Icon className="mr-1.5 h-3.5 w-3.5" />
+              {enabled ? `Post to ${label}` : `Connect ${label.split(" ")[0]} to enable`}
+            </Button>
+          </PostDialog>
+        );
+      })}
     </div>
   );
 }
 
-function AnalyticsCards() {
+function AnalyticsCards({ totalViews }: { totalViews: number }) {
   const cards = [
-    { label: "Views", value: "0", note: "Wired up in Prompt 1.14." },
-    { label: "Earnings", value: "$0.00", note: "Stripe Connect lands in Phase 3." },
+    {
+      label: "Views",
+      value: totalViews.toLocaleString(),
+      note:
+        totalViews > 0
+          ? "Sum across all platforms; refreshed every 30 min via syncPostStats."
+          : "No posts yet.",
+    },
+    {
+      label: "Earnings",
+      value: "$0.00",
+      note: "Stripe Connect lands in Phase 3.",
+    },
   ];
   return (
     <div className="grid gap-3 sm:grid-cols-2">

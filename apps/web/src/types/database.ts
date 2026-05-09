@@ -124,6 +124,7 @@ export type Database = {
           platform_post_id: string | null
           posted_at: string | null
           posted_by_profile_id: string | null
+          scheduled_for: string | null
           updated_at: string
           view_count: number
         }
@@ -137,6 +138,7 @@ export type Database = {
           platform_post_id?: string | null
           posted_at?: string | null
           posted_by_profile_id?: string | null
+          scheduled_for?: string | null
           updated_at?: string
           view_count?: number
         }
@@ -150,6 +152,7 @@ export type Database = {
           platform_post_id?: string | null
           posted_at?: string | null
           posted_by_profile_id?: string | null
+          scheduled_for?: string | null
           updated_at?: string
           view_count?: number
         }
