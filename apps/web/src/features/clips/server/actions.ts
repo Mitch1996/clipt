@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
 
+import { canCreateClip } from "@/lib/billing/entitlements";
 import { inngest } from "@/inngest/client";
 import { createClient } from "@/lib/supabase/server";
 
@@ -47,6 +48,15 @@ export async function createClipFromUrl(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
+
+  // Free-tier clip cap (Prompt 1.15). Paid tiers short-circuit to ok=true.
+  const gate = await canCreateClip(user.id);
+  if (!gate.ok) {
+    return {
+      ok: false,
+      error: `You've hit the free-tier limit of ${gate.limit} clips this month. Upgrade to Creator for unlimited clips.`,
+    };
+  }
 
   const { canonicalUrl, platform, kind } = detection.value;
 

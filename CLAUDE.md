@@ -195,6 +195,32 @@ suspected). Procedure:
 5. **Commit** the public-key file changes; the JWKS is the public
    source of truth.
 
+### Billing & subscriptions
+
+- Plans + tier-driven entitlements (clip cap, export resolution, etc.)
+  live in `src/lib/billing/plans.ts` — single source of truth. Never
+  inline a `tier === 'free'` check; call `getEntitlements(profileId)`
+  from `src/lib/billing/entitlements.ts`.
+- The Stripe client is a singleton in `src/lib/billing/stripe.ts`
+  (`apiVersion` pinned). Server-only via `import "server-only"`.
+- Checkout + Billing Portal sessions are minted by server actions in
+  `src/features/billing/server/checkout.ts`. Each Checkout stamps
+  `metadata.profileId` so the webhook can correlate subscriptions back
+  to a profile even if Stripe-side customer mapping drifts.
+- The webhook handler at `/api/stripe/webhook` is the only place that
+  writes the subscription columns on `profiles`. It dedupes by inserting
+  every delivery into `public.stripe_events` (unique on id), so Stripe
+  retries are no-ops. Handled events: `checkout.session.completed`,
+  `customer.subscription.{created,updated,deleted}`,
+  `invoice.payment_failed`. Adding new types is intentional.
+- Test mode vs live mode: `.env.local` carries `sk_test_*` /
+  `pk_test_*` plus test-mode Price IDs while we're pre-launch. To go
+  live: roll live keys (Stripe → Developers → API keys), create
+  matching products in live mode, swap the four envs (`STRIPE_*` +
+  `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`), and register a fresh webhook
+  endpoint with its own `STRIPE_WEBHOOK_SECRET`. Test products and
+  live products are independent — never share IDs across modes.
+
 ### Tests
 
 - **Unit / integration**: Vitest. Files live next to the code as

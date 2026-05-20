@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { ArrowRight, Plus, Tv } from "lucide-react";
+import { ArrowRight, CreditCard, Plus, Tv } from "lucide-react";
 
+import { getEntitlements } from "@/lib/billing/entitlements";
+import { PLANS } from "@/lib/billing/plans";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
@@ -24,6 +26,7 @@ export default async function DashboardPage() {
     .select("id", { count: "exact", head: true })
     .not("access_token_encrypted", "is", null);
 
+  const ent = await getEntitlements(user!.id);
   const handle = profile?.handle ?? "user";
 
   return (
@@ -90,6 +93,46 @@ export default async function DashboardPage() {
           </div>
         </Link>
       </div>
+
+      <Link
+        href="/dashboard/billing"
+        className="group mt-6 flex items-center justify-between rounded-md border border-border bg-card p-6 transition-colors hover:border-accent/40"
+      >
+        <div className="flex items-start gap-4">
+          <CreditCard className="mt-1 h-6 w-6 text-accent" strokeWidth={1.75} />
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">
+              {PLANS[ent.effectiveTier].name} plan
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {ent.monthlyClipLimit === null ? (
+                <>
+                  <span className="text-foreground tnum">
+                    {ent.clipsThisMonth}
+                  </span>{" "}
+                  clip{ent.clipsThisMonth === 1 ? "" : "s"} this month · unlimited
+                </>
+              ) : (
+                <>
+                  <span className="text-foreground tnum">
+                    {ent.clipsThisMonth}
+                  </span>{" "}
+                  /{" "}
+                  <span className="tnum">{ent.monthlyClipLimit}</span> clips this
+                  month
+                  {ent.clipsRemaining === 0 ? (
+                    <span className="ml-2 text-destructive">limit reached</span>
+                  ) : null}
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="inline-flex items-center gap-1 text-sm text-foreground transition-colors group-hover:text-accent">
+          {ent.effectiveTier === "free" ? "Upgrade" : "Manage"}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </div>
+      </Link>
     </div>
   );
 }

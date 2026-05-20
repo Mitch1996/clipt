@@ -341,6 +341,11 @@ export type Database = {
           role: string
           stripe_connect_account_id: string | null
           stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscription_price_id: string | null
+          subscription_renews_at: string | null
+          subscription_status: string
+          subscription_tier: string
           updated_at: string
         }
         Insert: {
@@ -353,6 +358,11 @@ export type Database = {
           role?: string
           stripe_connect_account_id?: string | null
           stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_price_id?: string | null
+          subscription_renews_at?: string | null
+          subscription_status?: string
+          subscription_tier?: string
           updated_at?: string
         }
         Update: {
@@ -365,7 +375,33 @@ export type Database = {
           role?: string
           stripe_connect_account_id?: string | null
           stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_price_id?: string | null
+          subscription_renews_at?: string | null
+          subscription_status?: string
+          subscription_tier?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      stripe_events: {
+        Row: {
+          id: string
+          type: string
+          received_at: string
+          payload: Json
+        }
+        Insert: {
+          id: string
+          type: string
+          received_at?: string
+          payload: Json
+        }
+        Update: {
+          id?: string
+          type?: string
+          received_at?: string
+          payload?: Json
         }
         Relationships: []
       }
