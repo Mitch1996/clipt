@@ -17,9 +17,12 @@ httpx>=0.28,<0.30
 # the worker can resolve and stream-pipe in Phase 2.
 yt-dlp>=2025.10
 
-# ML deps land in Prompt 1.9 (faster-whisper) and Prompt 1.10
-# (mediapipe). Pinning them now would balloon the Docker image even
-# though the stubs don't import them yet, so they're commented:
-# faster-whisper>=1.0
+# Captions in Prompt 1.9 use OpenAI's hosted Whisper API instead of
+# faster-whisper running locally — much smaller image, $0.006/min,
+# zero cold-start cost.
+openai>=1.55,<3
+
+# Reframe ML deps land in Prompt 1.10 — kept commented to keep the
+# image small until they're actually wired:
 # mediapipe>=0.10
 # ffmpeg-python>=0.2
