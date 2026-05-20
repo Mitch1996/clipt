@@ -63,6 +63,9 @@ export type Database = {
           connected_at: string
           created_at: string
           id: string
+          is_live: boolean
+          last_live_at: string | null
+          last_live_check: string | null
           last_synced_at: string | null
           owner_id: string
           platform: string
@@ -78,6 +81,9 @@ export type Database = {
           connected_at?: string
           created_at?: string
           id?: string
+          is_live?: boolean
+          last_live_at?: string | null
+          last_live_check?: string | null
           last_synced_at?: string | null
           owner_id: string
           platform: string
@@ -93,6 +99,9 @@ export type Database = {
           connected_at?: string
           created_at?: string
           id?: string
+          is_live?: boolean
+          last_live_at?: string | null
+          last_live_check?: string | null
           last_synced_at?: string | null
           owner_id?: string
           platform?: string

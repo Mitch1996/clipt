@@ -1,0 +1,19 @@
+# API + scheduler
+fastapi>=0.115,<0.118
+uvicorn[standard]>=0.32,<0.36
+pydantic>=2.11,<3
+
+# HTTP client for Twitch GraphQL + HLS playlist / segment fetches +
+# Upstash REST API.
+httpx>=0.28,<0.30
+
+# S3 — bucket layout matches the video worker (sources/ verticals/
+# thumbnails/ captions/) plus a live/ prefix this worker owns.
+boto3>=1.36,<2
+
+# Supabase — read-side ("which channels exist") + writing
+# is_live / last_live_check / last_live_at. Service-role key only.
+supabase>=2.9,<3
+
+# Prometheus text-format exposition for /metrics.
+prometheus-client>=0.21,<1
