@@ -1,3 +1,4 @@
+import { liveHypeMoment } from "./liveHypeMoment";
 import { processCaptionEdit } from "./processCaptionEdit";
 import { processClip } from "./processClip";
 import { publishScheduledPost } from "./publishScheduledPost";
@@ -13,4 +14,5 @@ export const functions = [
   processCaptionEdit,
   publishScheduledPost,
   syncPostStats,
+  liveHypeMoment,
 ];

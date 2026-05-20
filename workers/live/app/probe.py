@@ -32,7 +32,11 @@ from pydantic import BaseModel
 
 from .config import settings
 from .ingestor import run_ingestor
+from .inngest_send import send_event
+from .metrics import CHAT_MESSAGES, HYPE_MOMENTS_FIRED
 from .redis_helper import UpstashClient
+from .spike_detector import SpikeDetector
+from .twitch_chat import TwitchChatListener
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +71,10 @@ class ProbeRequest(BaseModel):
     login: str
     duration_s: float = 60.0
     keep_artifacts: bool = False
+    # Whether to also start a chat listener + spike detector against the
+    # same login for the duration. Default true so the dev probe
+    # exercises both the ingestor and the spike pipeline.
+    with_chat: bool = True
 
 
 class ProbeResponse(BaseModel):
@@ -75,6 +83,7 @@ class ProbeResponse(BaseModel):
     login: str
     duration_s: float
     keep_artifacts: bool
+    with_chat: bool
 
 
 @router.post("/dev/probe-channel", response_model=ProbeResponse)
@@ -90,7 +99,40 @@ async def probe_channel(
     http = httpx.AsyncClient(timeout=10.0)
     redis = UpstashClient()
 
+    # Optional chat listener + spike detector. Same task lifetime as
+    # the ingestor.
+    chat_listener: TwitchChatListener | None = None
+    chat_detector: SpikeDetector | None = None
+    if payload.with_chat:
+        async def on_hype(_cid: str, reason: str, hpayload: dict) -> None:
+            HYPE_MOMENTS_FIRED.labels(reason=reason).inc()
+            await send_event(name="clip/hype-moment", data=hpayload)
+
+        chat_detector = SpikeDetector(
+            channel_id=synthetic_channel_id,
+            channel_login=payload.login,
+            on_hype=on_hype,
+        )
+
+        async def on_message(channel: str, nick: str, text: str, ts: float) -> None:
+            CHAT_MESSAGES.inc()
+            assert chat_detector is not None
+            await chat_detector.on_message(channel, nick, text, ts)
+
+        chat_listener = TwitchChatListener(
+            channel_login=payload.login, on_message=on_message
+        )
+
     async def _run():
+        chat_listener_task: asyncio.Task[None] | None = None
+        chat_detector_task: asyncio.Task[None] | None = None
+        if chat_listener and chat_detector:
+            chat_listener_task = asyncio.create_task(
+                chat_listener.run(), name=f"probe-chat-{payload.login}"
+            )
+            chat_detector_task = asyncio.create_task(
+                chat_detector.run(), name=f"probe-spike-{payload.login}"
+            )
         try:
             await asyncio.wait_for(
                 run_ingestor(
@@ -107,13 +149,24 @@ async def probe_channel(
             cancel.set()
             log.info("probe[%s]: hit %.0fs duration cap", payload.login, payload.duration_s)
         finally:
+            if chat_listener:
+                chat_listener.stop()
+            if chat_detector:
+                chat_detector.stop()
+            for task in (chat_listener_task, chat_detector_task):
+                if task:
+                    try:
+                        await asyncio.wait_for(task, timeout=5.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        task.cancel()
             await http.aclose()
             await redis.aclose()
 
     asyncio.create_task(_run(), name=f"probe-{payload.login}-{task_id[:6]}")
     log.info(
-        "probe[%s]: started task %s channel=%s duration=%.0fs keep=%s",
-        payload.login, task_id[:8], synthetic_channel_id, payload.duration_s, payload.keep_artifacts,
+        "probe[%s]: started task %s channel=%s duration=%.0fs keep=%s chat=%s",
+        payload.login, task_id[:8], synthetic_channel_id,
+        payload.duration_s, payload.keep_artifacts, payload.with_chat,
     )
     return ProbeResponse(
         task_id=task_id,
@@ -121,6 +174,7 @@ async def probe_channel(
         login=payload.login,
         duration_s=payload.duration_s,
         keep_artifacts=payload.keep_artifacts,
+        with_chat=payload.with_chat,
     )
 
 

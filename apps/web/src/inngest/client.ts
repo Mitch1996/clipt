@@ -35,4 +35,27 @@ export const PublishScheduled = eventType("publish/scheduled", {
   }>(),
 });
 
+/**
+ * Fired by the live worker (workers/live) when a connected channel's
+ * chat spikes or a keyword cluster trips the detector. The handler
+ * `liveHypeMoment` will (Phase 2.2+) reach into the segment buffer
+ * around `detectedAt`, stitch an mp4, and kick the normal clip
+ * pipeline — for now it just logs so we can verify the event flow
+ * end-to-end.
+ */
+export const ClipHypeMoment = eventType("clip/hype-moment", {
+  schema: staticSchema<{
+    channelId: string;
+    channelLogin: string;
+    detectedAt: number; // epoch milliseconds
+    score: number;
+    reason: "chat_spike" | "keyword_cluster";
+    stats?: {
+      shortMsgPerSec: number;
+      baselineMsgPerSec: number;
+      keywordHits5s: number;
+    };
+  }>(),
+});
+
 export const inngest = new Inngest({ id: "clipt" });

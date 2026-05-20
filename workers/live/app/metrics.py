@@ -39,3 +39,21 @@ INGEST_CYCLE_SECONDS = Histogram(
     "Per-iteration latency of an ingestor loop.",
     buckets=(0.1, 0.25, 0.5, 1, 2, 4, 8, 16),
 )
+
+# ─── Chat / spike detection (Phase 2.2) ──────────────────────────────
+
+ACTIVE_CHAT_LISTENERS = Gauge(
+    "clipt_live_active_chat_listeners",
+    "Per-channel Twitch IRC chat listener tasks currently running.",
+)
+
+CHAT_MESSAGES = Counter(
+    "clipt_live_chat_messages_total",
+    "PRIVMSG frames the chat listeners have seen since process start.",
+)
+
+HYPE_MOMENTS_FIRED = Counter(
+    "clipt_live_hype_moments_fired_total",
+    "Number of clip/hype-moment Inngest events emitted by the spike detectors.",
+    ["reason"],
+)
