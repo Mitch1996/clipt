@@ -14,34 +14,56 @@ import type { Database } from "@/types/database";
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
+  // Fail-open if Supabase isn't configured for this deployment (e.g. a
+  // preview / landing-only build): skip the auth probe and treat the
+  // user as anonymous. The matcher still passes `/` through and the
+  // dashboard guards below redirect to /auth/login on anonymous hits.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return passthroughOrGuard(request, response, null);
+  }
+
+  const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value),
+        );
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options),
+        );
       },
     },
-  );
+  });
 
   // IMPORTANT: getUser() (not getSession()) — getSession reads from the
   // cookie without verifying with the auth server, which is unsafe in
   // middleware where we make trust decisions.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  //
+  // If the auth call throws (Supabase paused, network blip, DNS) we
+  // fail-open as anonymous so a transient outage doesn't 500 the whole
+  // site. The dashboard guards still redirect to /auth/login.
+  let user: { id: string } | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user ?? null;
+  } catch {
+    user = null;
+  }
 
+  return passthroughOrGuard(request, response, user);
+}
+
+function passthroughOrGuard(
+  request: NextRequest,
+  response: NextResponse,
+  user: { id: string } | null,
+): NextResponse {
   const { pathname } = request.nextUrl;
 
   if (!user && pathname.startsWith("/dashboard")) {
