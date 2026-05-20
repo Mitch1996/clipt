@@ -259,6 +259,20 @@ export const processClip = inngest.createFunction(
         .eq("id", clipId);
       if (error) throw error;
     });
+
+    // Channel-set face-cam corner override. Undefined => worker
+    // auto-detects via clustering; set value => skips detection and
+    // crops the standard rectangle in the named corner.
+    const faceCamCorner = await step.run("load-face-cam-corner", async () => {
+      if (!resolved.channelId) return null;
+      const { data } = await supabase
+        .from("channels")
+        .select("face_cam_corner")
+        .eq("id", resolved.channelId)
+        .maybeSingle();
+      return data?.face_cam_corner ?? null;
+    });
+
     const reframed = await step.run("reframe", () =>
       callReframe({
         clipId,
@@ -267,6 +281,9 @@ export const processClip = inngest.createFunction(
         style: "default",
         creatorHandle: downloaded.sourceCreator?.platformLogin,
         attributionToken,
+        faceCamCorner: (faceCamCorner ?? undefined) as
+          | "top_left" | "top_right" | "bottom_left" | "bottom_right"
+          | undefined,
       }),
     );
 

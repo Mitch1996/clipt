@@ -34,7 +34,7 @@ export const processCaptionEdit = inngest.createFunction(
       const { data, error } = await supabase
         .from("clips")
         .select(
-          "id, video_r2_key, attribution_signature, source_creator_profile_id",
+          "id, video_r2_key, attribution_signature, source_creator_profile_id, source_channel_id",
         )
         .eq("id", clipId)
         .maybeSingle();
@@ -78,6 +78,16 @@ export const processCaptionEdit = inngest.createFunction(
       if (error) throw error;
     });
 
+    const faceCamCorner = await step.run("load-face-cam-corner", async () => {
+      if (!clip.source_channel_id) return null;
+      const { data } = await supabase
+        .from("channels")
+        .select("face_cam_corner")
+        .eq("id", clip.source_channel_id)
+        .maybeSingle();
+      return data?.face_cam_corner ?? null;
+    });
+
     const reframed = await step.run("reframe", () =>
       callReframe({
         clipId,
@@ -86,6 +96,9 @@ export const processCaptionEdit = inngest.createFunction(
         style: "default",
         creatorHandle: creatorHandle ?? undefined,
         attributionToken: clip.attribution_signature ?? undefined,
+        faceCamCorner: (faceCamCorner ?? undefined) as
+          | "top_left" | "top_right" | "bottom_left" | "bottom_right"
+          | undefined,
       }),
     );
 

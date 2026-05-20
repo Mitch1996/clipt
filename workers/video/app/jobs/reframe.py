@@ -140,6 +140,10 @@ class ReframeIn(BaseModel):
     attribution_token: str | None = Field(default=None, alias="attributionToken")
     # Drives the @handle pill in the top-right.
     creator_handle: str | None = Field(default=None, alias="creatorHandle")
+    # Streamer override for the face-cam location when auto-detection
+    # fails. One of "top_left" | "top_right" | "bottom_left" |
+    # "bottom_right" | None (auto).
+    face_cam_corner: str | None = Field(default=None, alias="faceCamCorner")
 
     model_config = {"populate_by_name": True}
 
@@ -177,14 +181,32 @@ def run(payload: ReframeIn) -> ReframeOut:
         )
 
         face_track = _sample_face_track(src_mp4, probe, SAMPLE_FPS)
-        face_track = _smooth_face_track(face_track, SMOOTH_WINDOW_S)
 
-        log.info("reframe: rendering 1080x1920 mp4 (style=%s)", payload.style)
+        # Resolve a single locked cam-crop region (in source pixels)
+        # for the whole clip. Streamers' face cams sit at a fixed OBS
+        # position; per-frame tracking just lets false positives bounce
+        # the crop around. The locked region is either:
+        #   - the dominant cluster of face detections, OR
+        #   - the corner preset on the streamer's channel row, OR
+        #   - default top-right (most common OBS placement).
+        cam_aspect = TARGET_W / CAM_BAND_H
+        cam_region = _resolve_locked_cam_region(
+            face_track=face_track,
+            src_w=probe.width,
+            src_h=probe.height,
+            corner_hint=payload.face_cam_corner,
+            target_aspect=cam_aspect,
+        )
+        log.info(
+            "reframe: rendering 1080x1920 mp4 (style=%s, cam_region=%s)",
+            payload.style, cam_region,
+        )
         _render_vertical(
             src_mp4=src_mp4,
             out_mp4=out_mp4,
             probe=probe,
             face_track=face_track,
+            cam_region=cam_region,
             style=payload.style or "stacked",
             captions=captions,
             handle=_clean_handle(payload.creator_handle),
@@ -471,6 +493,7 @@ def _render_vertical(
     out_mp4: str,
     probe: VideoProbe,
     face_track: list[FaceSample],
+    cam_region: tuple[int, int, int, int],
     style: str,
     captions: dict[str, Any] | None,
     handle: str,
@@ -543,7 +566,7 @@ def _render_vertical(
 
             if is_stacked:
                 composed = _compose_stacked_frame(
-                    current_src_frame, face_track, t, probe.width, probe.height,
+                    current_src_frame, cam_region, probe.width, probe.height,
                 )
             else:
                 cropped = _crop_at(current_src_frame, face_track, t, crop_w, crop_h, probe.width)
@@ -600,6 +623,139 @@ def _crop_at(
     x0 = focus_x_px - crop_w // 2
     x0 = max(0, min(src_w - crop_w, x0))
     return frame[:crop_h, x0:x0 + crop_w]
+
+
+# ─── Locked-region resolution (industry-standard approach) ────────────
+
+
+CornerHint = str  # "top_left" | "top_right" | "bottom_left" | "bottom_right" | None
+
+
+def _corner_preset_region(
+    corner: CornerHint, src_w: int, src_h: int, target_aspect: float,
+) -> tuple[int, int, int, int]:
+    """When auto-detection fails we fall back to a standard OBS-shaped
+    rectangle at the streamer-specified corner. ~25% of width × 30% of
+    height matches the most common face-cam scene in OBS templates."""
+    cam_w_norm = 0.28
+    cam_h_norm = 0.36
+    if corner == "top_left":
+        x_norm, y_norm = 0.02, 0.02
+    elif corner == "bottom_left":
+        x_norm, y_norm = 0.02, 1.0 - cam_h_norm - 0.02
+    elif corner == "bottom_right":
+        x_norm, y_norm = 1.0 - cam_w_norm - 0.02, 1.0 - cam_h_norm - 0.02
+    else:
+        # Default: top-right is the OBS template default.
+        x_norm, y_norm = 1.0 - cam_w_norm - 0.02, 0.02
+    crop_w = int(round(cam_w_norm * src_w))
+    crop_h = int(round(cam_h_norm * src_h))
+    # Enforce target aspect.
+    if crop_w / max(crop_h, 1) > target_aspect:
+        crop_w = int(round(crop_h * target_aspect))
+    else:
+        crop_h = int(round(crop_w / target_aspect))
+    x0 = int(round(x_norm * src_w))
+    y0 = int(round(y_norm * src_h))
+    # Clamp.
+    x0 = max(0, min(src_w - crop_w, x0))
+    y0 = max(0, min(src_h - crop_h, y0))
+    return (x0, y0, crop_w, crop_h)
+
+
+def _classify_quadrant(x: float, y: float) -> str:
+    """Bin a normalized (x, y) point into one of nine regions. Centre
+    is intentionally large so a slight-off-corner detection still
+    counts toward its corner cluster, but a properly-central detection
+    is captured as such."""
+    if x < 0.4:
+        qx = "left"
+    elif x > 0.6:
+        qx = "right"
+    else:
+        qx = "mid"
+    if y < 0.4:
+        qy = "top"
+    elif y > 0.6:
+        qy = "bottom"
+    else:
+        qy = "mid"
+    return f"{qy}_{qx}"
+
+
+def _resolve_locked_cam_region(
+    face_track: list[FaceSample],
+    src_w: int,
+    src_h: int,
+    corner_hint: CornerHint,
+    target_aspect: float,
+) -> tuple[int, int, int, int]:
+    """Compute a single fixed (x0, y0, w, h) crop region for the cam
+    zone across the whole clip.
+
+    Order of preference:
+      1. If `corner_hint` is set by the streamer, just use the preset.
+      2. Cluster the face-track detections by quadrant. If a non-centre
+         cluster dominates AND has consistent positions, build a crop
+         from the average face there.
+      3. Fall back to the top-right preset (default OBS placement).
+    """
+    # 1. Explicit override always wins.
+    if corner_hint:
+        return _corner_preset_region(corner_hint, src_w, src_h, target_aspect)
+
+    if not face_track:
+        return _corner_preset_region("top_right", src_w, src_h, target_aspect)
+
+    # 2. Cluster detections — but exclude the seeded DEFAULT_FACE
+    # samples that carry forward when nothing was detected. We flag a
+    # "real" sample as one whose bbox dimensions differ from DEFAULT_FACE.
+    real_samples = [
+        s for s in face_track
+        if (s[3], s[4]) != (DEFAULT_FACE[2], DEFAULT_FACE[3])
+    ]
+    if not real_samples:
+        log.info("reframe: no real face detections — using top_right preset")
+        return _corner_preset_region("top_right", src_w, src_h, target_aspect)
+
+    # Bucket detections by 9-region quadrant.
+    clusters: dict[str, list[FaceSample]] = {}
+    for s in real_samples:
+        q = _classify_quadrant(s[1], s[2])
+        clusters.setdefault(q, []).append(s)
+
+    # Pick the most populous non-centre cluster. If centre is more
+    # populous than every corner combined, accept it (talking-head
+    # streamer with no game).
+    by_count = sorted(clusters.items(), key=lambda kv: len(kv[1]), reverse=True)
+    centre_count = len(clusters.get("mid_mid", []))
+    non_centre_total = sum(
+        len(v) for k, v in clusters.items() if k != "mid_mid"
+    )
+    if centre_count > non_centre_total * 1.5:
+        dominant = "mid_mid"
+    else:
+        # Skip mid_mid, take the largest corner-ish cluster.
+        non_centre = [(k, v) for k, v in by_count if k != "mid_mid"]
+        if not non_centre:
+            log.info("reframe: only centre detections — using top_right preset")
+            return _corner_preset_region("top_right", src_w, src_h, target_aspect)
+        dominant = non_centre[0][0]
+
+    samples = clusters[dominant]
+    log.info(
+        "reframe: locked region from cluster %s (n=%d)", dominant, len(samples),
+    )
+
+    # Average bbox of the dominant cluster.
+    avg_x = sum(s[1] for s in samples) / len(samples)
+    avg_y = sum(s[2] for s in samples) / len(samples)
+    avg_w = sum(s[3] for s in samples) / len(samples)
+    avg_h = sum(s[4] for s in samples) / len(samples)
+
+    return _cam_crop_box(
+        avg_x, avg_y, avg_w, avg_h, src_w, src_h, target_aspect,
+    )
 
 
 # ─── Stacked-layout composer ──────────────────────────────────────────
@@ -664,21 +820,16 @@ _CAPTION_BAND_BG = (14, 14, 14)
 
 def _compose_stacked_frame(
     frame: np.ndarray,
-    face_track: list[FaceSample],
-    t: float,
+    cam_region: tuple[int, int, int, int],
     src_w: int,
     src_h: int,
 ) -> np.ndarray:
-    """Build one 1080×1920 stacked frame from a source frame + the
-    face-track sample at time t."""
+    """Build one 1080×1920 stacked frame from a source frame using the
+    locked cam region computed once for the whole clip."""
     out = np.empty((TARGET_H, TARGET_W, 3), dtype=np.uint8)
 
-    # ── Cam band (top): head + shoulders crop ─────────────────────────
-    face_x, face_y, face_w, face_h = _face_at(face_track, t)
-    cam_aspect = TARGET_W / CAM_BAND_H
-    cx0, cy0, ccw, cch = _cam_crop_box(
-        face_x, face_y, face_w, face_h, src_w, src_h, cam_aspect,
-    )
+    # ── Cam band (top): the locked region ─────────────────────────────
+    cx0, cy0, ccw, cch = cam_region
     cam_crop = frame[cy0:cy0 + cch, cx0:cx0 + ccw]
     out[0:CAM_BAND_H] = cv2.resize(
         cam_crop, (TARGET_W, CAM_BAND_H), interpolation=cv2.INTER_AREA,

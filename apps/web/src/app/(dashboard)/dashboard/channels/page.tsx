@@ -8,6 +8,8 @@ import {
   type ChannelPlatform,
 } from "@/features/channels/components/ConnectChannelButton";
 import { DisconnectButton } from "@/features/channels/components/DisconnectButton";
+import { FaceCamCornerPicker } from "@/features/channels/components/FaceCamCornerPicker";
+import type { FaceCamCorner } from "@/features/channels/server/setFaceCamCorner";
 import { isInstagramConfigured } from "@/features/channels/server/instagram";
 import { isTikTokConfigured } from "@/features/channels/server/tiktok";
 import { createClient } from "@/lib/supabase/server";
@@ -81,7 +83,7 @@ export default async function ChannelsPage() {
   const { data: rows } = await supabase
     .from("channels")
     .select(
-      "id, platform, platform_username, scopes, connected_at, last_synced_at, access_token_encrypted",
+      "id, platform, platform_username, scopes, connected_at, last_synced_at, access_token_encrypted, face_cam_corner",
     )
     .order("connected_at", { ascending: false });
 
@@ -156,6 +158,14 @@ export default async function ChannelsPage() {
                       ))}
                     </div>
                   )}
+                  {p.key === "twitch" ? (
+                    <div className="pt-2">
+                      <FaceCamCornerPicker
+                        channelId={row.id}
+                        current={(row.face_cam_corner ?? null) as FaceCamCorner}
+                      />
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-between pt-2">
                     <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                       connected{" "}

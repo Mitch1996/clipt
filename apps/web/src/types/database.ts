@@ -62,6 +62,7 @@ export type Database = {
           access_token_encrypted: string | null
           connected_at: string
           created_at: string
+          face_cam_corner: string | null
           id: string
           is_live: boolean
           last_live_at: string | null
@@ -80,6 +81,7 @@ export type Database = {
           access_token_encrypted?: string | null
           connected_at?: string
           created_at?: string
+          face_cam_corner?: string | null
           id?: string
           is_live?: boolean
           last_live_at?: string | null
@@ -98,6 +100,7 @@ export type Database = {
           access_token_encrypted?: string | null
           connected_at?: string
           created_at?: string
+          face_cam_corner?: string | null
           id?: string
           is_live?: boolean
           last_live_at?: string | null

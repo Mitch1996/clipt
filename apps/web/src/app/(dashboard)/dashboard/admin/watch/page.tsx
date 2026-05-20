@@ -2,7 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import { Radio, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { FaceCamCornerPicker } from "@/features/channels/components/FaceCamCornerPicker";
 import { WatchChannelForm } from "@/features/channels/components/WatchChannelForm";
+import type { FaceCamCorner } from "@/features/channels/server/setFaceCamCorner";
 import {
   listWatchOnlyChannels,
   type WatchOnlyChannel,
@@ -113,6 +115,12 @@ function Row({
         >
           {previewUrl}
         </a>
+        <div className="mt-4">
+          <FaceCamCornerPicker
+            channelId={c.id}
+            current={(c.face_cam_corner ?? null) as FaceCamCorner}
+          />
+        </div>
       </div>
       <form
         action={async () => {

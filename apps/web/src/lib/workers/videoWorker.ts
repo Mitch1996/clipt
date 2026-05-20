@@ -118,6 +118,8 @@ export interface ReframeIn {
   style?: "default" | string;
   attributionToken?: string;
   creatorHandle?: string;
+  /** Streamer-set override for the OBS face-cam position. */
+  faceCamCorner?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
 }
 export interface ReframeOut {
   verticalR2Key: string;

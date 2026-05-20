@@ -174,6 +174,7 @@ export interface WatchOnlyChannel {
   is_live: boolean;
   last_live_check: string | null;
   last_live_at: string | null;
+  face_cam_corner: string | null;
   clipCount: number;
 }
 
@@ -193,7 +194,9 @@ export async function listWatchOnlyChannels(): Promise<WatchOnlyChannel[]> {
 
   const { data: rows } = await admin
     .from("channels")
-    .select("id, platform_username, is_live, last_live_check, last_live_at")
+    .select(
+      "id, platform_username, is_live, last_live_check, last_live_at, face_cam_corner",
+    )
     .eq("platform", "twitch")
     .eq("access_token_encrypted", "WATCH_ONLY")
     .order("last_live_at", { ascending: false, nullsFirst: false });
