@@ -55,32 +55,53 @@ export function ClipStatusLive({
 
   React.useEffect(() => {
     const supabase = createClient();
-    const channel = supabase
-      .channel(`clip:${clipId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "clips",
-          filter: `id=eq.${clipId}`,
-        },
-        (payload) => {
-          const row = payload.new as ClipRow;
-          setStatus(row.status as ClipStatus);
-          setStep(row.processing_step ?? null);
-          setError(row.processing_error ?? null);
-          // When the row reaches a terminal state, refresh server data
-          // so the page picks up new R2 keys, captions, etc.
-          if (row.status === "ready" || row.status === "failed") {
-            router.refresh();
-          }
-        },
-      )
-      .subscribe();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+
+    (async () => {
+      // Realtime enforces RLS on the broadcast — without the user's JWT
+      // the websocket runs as anon, and our clips-read policy only
+      // allows anon to see ready+public+non-deleted rows. So a clip
+      // mid-processing would never push updates. Get the session first
+      // and stamp the access token on the Realtime client.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.access_token) {
+        supabase.realtime.setAuth(session.access_token);
+      }
+
+      channel = supabase
+        .channel(`clip:${clipId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "clips",
+            filter: `id=eq.${clipId}`,
+          },
+          (payload) => {
+            const row = payload.new as ClipRow;
+            setStatus(row.status as ClipStatus);
+            setStep(row.processing_step ?? null);
+            setError(row.processing_error ?? null);
+            // When the row reaches a terminal state, refresh server
+            // data so the page picks up new R2 keys, captions, etc.
+            if (row.status === "ready" || row.status === "failed") {
+              router.refresh();
+            }
+          },
+        )
+        .subscribe();
+    })();
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
   }, [clipId, router]);
 
