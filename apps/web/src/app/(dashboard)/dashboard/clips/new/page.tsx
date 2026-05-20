@@ -9,7 +9,7 @@ export const metadata = {
 
 export default function NewClipPage() {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-12">
+    <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="flex items-center justify-between">
         <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
           Dashboard / clips / new

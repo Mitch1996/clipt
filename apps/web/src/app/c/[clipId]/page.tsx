@@ -89,18 +89,18 @@ export default async function PublicClipPage({
     <div className="min-h-screen bg-background text-foreground">
       <RecordView clipId={clip.id} />
       <header className="border-b border-border">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center">
             <Logo className="h-6" />
           </Link>
-          <nav className="flex items-center gap-3">
+          <nav className="flex items-center gap-2 sm:gap-3">
             <ShareButton url={shareUrl} title={clip.title} />
             <EmbedCodeButton embedUrl={embedUrl} />
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-5xl gap-10 px-6 py-10 md:grid-cols-[auto,1fr] md:py-16">
+      <main className="mx-auto grid max-w-5xl gap-8 px-4 py-8 sm:px-6 sm:py-10 md:grid-cols-[auto,1fr] md:py-16">
         <ClipPlayer
           src={clip.videoUrl}
           poster={clip.thumbnailUrl}
@@ -134,7 +134,7 @@ export default async function PublicClipPage({
       </main>
 
       <footer className="mt-20 border-t border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6 text-xs text-muted-foreground">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-6 text-xs text-muted-foreground sm:px-6">
           <span>
             Clipped on{" "}
             <Link href="/" className="text-foreground hover:underline">

@@ -36,7 +36,7 @@ export default async function DashboardPage() {
   const handle = profile?.handle ?? "user";
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-16">
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-16">
       <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
         Dashboard
       </span>
@@ -119,7 +119,7 @@ export default async function DashboardPage() {
 
       <Link
         href="/dashboard/billing"
-        className="group mt-12 flex items-center justify-between rounded-md border border-border bg-card p-6 transition-colors hover:border-accent/40"
+        className="group mt-12 flex flex-col gap-3 rounded-md border border-border bg-card p-6 transition-colors hover:border-accent/40 sm:flex-row sm:items-center sm:justify-between"
       >
         <div className="flex items-start gap-4">
           <CreditCard className="mt-1 h-6 w-6 text-accent" strokeWidth={1.75} />

@@ -24,7 +24,7 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
   const ent = await getEntitlements(user.id);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-16">
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-16">
       <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
         Billing
       </span>

@@ -94,7 +94,7 @@ export default async function ClipDetailPage({
   const totalViews = posts.reduce((acc, p) => acc + (p.view_count || 0), 0);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="flex items-center justify-between">
         <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
           Dashboard / clips / {clip.id.slice(0, 8)}
@@ -223,7 +223,7 @@ function ReadyEditor({
         </Section>
 
         <Section title="Danger zone">
-          <div className="flex items-center justify-between rounded-md border border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-medium">Delete this clip</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
