@@ -65,7 +65,7 @@ async function sendConfirmationEmail({ email, segment }: WaitlistInput) {
   const resend = new Resend(process.env.RESEND_API_KEY);
 
   await resend.emails.send({
-    from: "Clipt <hello@clipt.tv>",
+    from: "Clipt <hello@clipt.live>",
     to: email,
     subject: "You're on the Clipt waitlist",
     react: WaitlistConfirm({ email, segment }),

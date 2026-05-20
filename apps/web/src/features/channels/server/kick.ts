@@ -49,7 +49,7 @@ export async function fetchKickClipMeta(slug: string): Promise<KickClipMeta | nu
       // Send a browser-like UA + JSON accept; Kick's public endpoint
       // sometimes returns Cloudflare challenge HTML on bare fetch.
       "user-agent":
-        "Mozilla/5.0 (compatible; CliptBot/1.0; +https://clipt.tv/bot)",
+        "Mozilla/5.0 (compatible; CliptBot/1.0; +https://clipt.live/bot)",
       accept: "application/json",
     },
     cache: "no-store",

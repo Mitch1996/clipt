@@ -17,7 +17,7 @@ import { SignJWT, importPKCS8 } from "jose";
  */
 
 export const ATTRIBUTION_AUDIENCE = "clipt-attribution-v1";
-export const ATTRIBUTION_ISSUER = "clipt.tv";
+export const ATTRIBUTION_ISSUER = "clipt.live";
 export const ATTRIBUTION_ALG = "EdDSA";
 
 export interface AttributionPayload {

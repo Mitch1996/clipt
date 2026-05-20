@@ -152,7 +152,7 @@ running through the full pipeline.
   `clips.attribution_signature`. Payload bundles the proof of origin:
   `clipId`, `sourceChannelId`, `originalCreatorProfileId`,
   `sourcePlatform`, `sourceUrl`, `sourceStartSec`, `sourceEndSec`,
-  `issuedAt`. Issuer = `clipt.tv`, audience = `clipt-attribution-v1`.
+  `issuedAt`. Issuer = `clipt.live`, audience = `clipt-attribution-v1`.
 - **Signing** is `signAttribution(payload)` in
   `src/lib/attribution/sign.ts`. Private key lives in
   `ATTRIBUTION_SIGNING_KEY` (base64-encoded PKCS8 DER). The Inngest

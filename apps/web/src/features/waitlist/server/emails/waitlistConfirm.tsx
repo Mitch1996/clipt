@@ -95,7 +95,7 @@ export default function WaitlistConfirmEmail({
           <Hr style={hr} />
           <Text style={fineprint}>
             © 2026 Clipt · You&rsquo;re receiving this because you signed up at
-            clipt.tv
+            clipt.live
           </Text>
         </Container>
       </Body>

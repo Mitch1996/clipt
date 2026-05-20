@@ -201,7 +201,7 @@ async function streamToBuffer(url: string): Promise<Buffer> {
   const res = await fetch(url, {
     headers: {
       "user-agent":
-        "Mozilla/5.0 (compatible; CliptBot/1.0; +https://clipt.tv/bot)",
+        "Mozilla/5.0 (compatible; CliptBot/1.0; +https://clipt.live/bot)",
     },
   });
   if (!res.ok) {

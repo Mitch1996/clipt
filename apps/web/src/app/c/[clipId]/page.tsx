@@ -16,7 +16,7 @@ import {
 
 export const revalidate = 60;
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://clipt.tv";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://clipt.live";
 
 export async function generateMetadata({
   params,
@@ -141,7 +141,7 @@ export default async function PublicClipPage({
             — every clip pays the creator.
           </span>
           <Link href="/" className="hover:text-foreground">
-            clipt.tv
+            clipt.live
           </Link>
         </div>
       </footer>
