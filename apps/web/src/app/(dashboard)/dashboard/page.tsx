@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, CreditCard, Plus, Tv } from "lucide-react";
+import { ArrowRight, CreditCard, Plus, Sparkles, Tv } from "lucide-react";
 
 import { MyClipsGrid } from "@/features/clips/components/MyClipsGrid";
 import { MyClipsRealtimeRefresh } from "@/features/clips/components/MyClipsRealtimeRefresh";
@@ -34,6 +34,7 @@ export default async function DashboardPage() {
     listMyClips(24),
   ]);
   const handle = profile?.handle ?? "user";
+  const isFirstRun = (connectedChannels ?? 0) === 0 && clips.length === 0;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-16">
@@ -51,6 +52,50 @@ export default async function DashboardPage() {
         . Connect a channel, paste a URL, ship a clip.
       </p>
 
+      {isFirstRun ? (
+        <div className="mt-8 rounded-md border border-accent/30 bg-accent/[0.04] p-5">
+          <div className="flex items-start gap-3">
+            <Sparkles
+              className="mt-0.5 h-5 w-5 shrink-0 text-accent"
+              strokeWidth={1.75}
+            />
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold tracking-[-0.01em]">
+                First time on Clipt? Two ways in.
+              </h2>
+              <ol className="mt-3 space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-accent">
+                    01
+                  </span>{" "}
+                  <Link
+                    href="/dashboard/channels"
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    Connect your channel
+                  </Link>{" "}
+                  to earn when fans clip your stream — attribution + payouts
+                  route back to you automatically.
+                </li>
+                <li>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-accent">
+                    02
+                  </span>{" "}
+                  <Link
+                    href="/dashboard/clips/new"
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    Paste a URL
+                  </Link>{" "}
+                  from any Twitch / YouTube / Kick clip to make your own
+                  vertical export — no channel connection needed.
+                </li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2">
         <Link
           href="/dashboard/channels"
@@ -66,8 +111,8 @@ export default async function DashboardPage() {
             Connect channels
           </h2>
           <p className="mt-2 flex-1 text-sm text-muted-foreground">
-            Twitch, YouTube, and Kick. We encrypt tokens at rest and refresh
-            them on demand.
+            Link Twitch / YouTube / Kick so clips of your stream credit you
+            and earnings route back automatically.
           </p>
           <div className="mt-4 inline-flex items-center gap-1 text-sm text-foreground transition-colors group-hover:text-accent">
             Open
