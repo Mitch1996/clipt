@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from .probe import router as probe_router
 from .scheduler import scheduler
 
 logging.basicConfig(
@@ -36,6 +37,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="clipt-live-worker", version="0.1.0", lifespan=lifespan)
+app.include_router(probe_router)
 
 
 @app.get("/healthz")
