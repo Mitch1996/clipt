@@ -438,6 +438,7 @@ export type Database = {
     }
     Functions: {
       is_admin: { Args: { uid: string }; Returns: boolean }
+      increment_clip_view: { Args: { p_clip_id: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

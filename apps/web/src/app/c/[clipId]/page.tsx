@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { AttributionBadge } from "@/features/clips/components/AttributionBadge";
 import { ClipPlayer } from "@/features/clips/components/ClipPlayer";
 import { EmbedCodeButton } from "@/features/clips/components/EmbedCodeButton";
+import { RecordView } from "@/features/clips/components/RecordView";
 import { ShareButton } from "@/features/clips/components/ShareButton";
 import {
   type PublicClipData,
@@ -86,6 +87,7 @@ export default async function PublicClipPage({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <RecordView clipId={clip.id} />
       <header className="border-b border-border">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
           <Link href="/" className="flex items-center">
