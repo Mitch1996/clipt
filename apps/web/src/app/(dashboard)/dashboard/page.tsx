@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { ArrowRight, CreditCard, Plus, Tv } from "lucide-react";
 
+import { MyClipsGrid } from "@/features/clips/components/MyClipsGrid";
+import { MyClipsRealtimeRefresh } from "@/features/clips/components/MyClipsRealtimeRefresh";
+import { listMyClips } from "@/features/clips/server/listMyClips";
 import { getEntitlements } from "@/lib/billing/entitlements";
 import { PLANS } from "@/lib/billing/plans";
 import { createClient } from "@/lib/supabase/server";
@@ -26,7 +29,10 @@ export default async function DashboardPage() {
     .select("id", { count: "exact", head: true })
     .not("access_token_encrypted", "is", null);
 
-  const ent = await getEntitlements(user!.id);
+  const [ent, clips] = await Promise.all([
+    getEntitlements(user!.id),
+    listMyClips(24),
+  ]);
   const handle = profile?.handle ?? "user";
 
   return (
@@ -42,8 +48,7 @@ export default async function DashboardPage() {
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs uppercase tracking-wider text-foreground">
           {profile?.role ?? "creator"}
         </span>
-        . Real dashboards land in upcoming prompts; for now you can connect a
-        channel.
+        . Connect a channel, paste a URL, ship a clip.
       </p>
 
       <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -94,9 +99,27 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
+      <div className="mt-12">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold tracking-[-0.01em]">
+            Recent clips
+          </h2>
+          <Link
+            href="/dashboard/clips/new"
+            className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-accent"
+          >
+            New clip →
+          </Link>
+        </div>
+        <div className="mt-5">
+          <MyClipsGrid clips={clips} />
+        </div>
+        <MyClipsRealtimeRefresh userId={user!.id} />
+      </div>
+
       <Link
         href="/dashboard/billing"
-        className="group mt-6 flex items-center justify-between rounded-md border border-border bg-card p-6 transition-colors hover:border-accent/40"
+        className="group mt-12 flex items-center justify-between rounded-md border border-border bg-card p-6 transition-colors hover:border-accent/40"
       >
         <div className="flex items-start gap-4">
           <CreditCard className="mt-1 h-6 w-6 text-accent" strokeWidth={1.75} />
