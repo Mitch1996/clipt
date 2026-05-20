@@ -58,11 +58,23 @@ log = logging.getLogger(__name__)
 # MediaPipe model cache. The legacy `mp.solutions.face_detection`
 # namespace was dropped in 0.10.x — Tasks API is the supported path
 # and it needs an explicit .tflite model bundle.
+#
+# Short-range model expects faces within ~2m of the camera, which fails
+# on streamer corner cams (face ≈ 300×300 px inside a 1920×1080 source =
+# ~5% of the frame, looks "far" to short-range). Full-range catches
+# these reliably.
 _MODEL_PATH = "/tmp/clipt-models/face_detector.tflite"
 _MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/face_detector/"
     "blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
 )
+# Detection input width — short-range works fine at 640, full-range
+# (now used for small corner cams) likes 1280+ so face pixels stay
+# discernible after downscaling.
+_DETECT_INPUT_WIDTH = 1280
+# Confidence floor. Lower than the previous 0.4 because tiny face cams
+# tend to come back at 0.25–0.35 even when they're clearly the cam.
+_MIN_DETECTION_CONFIDENCE = 0.25
 
 
 def _ensure_face_model() -> str:
@@ -278,7 +290,7 @@ def _sample_face_track(
     options = mp_vision.FaceDetectorOptions(
         base_options=mp_tasks.BaseOptions(model_asset_path=_ensure_face_model()),
         running_mode=mp_vision.RunningMode.IMAGE,
-        min_detection_confidence=0.4,
+        min_detection_confidence=_MIN_DETECTION_CONFIDENCE,
     )
     detector = mp_vision.FaceDetector.create_from_options(options)
 
@@ -291,6 +303,7 @@ def _sample_face_track(
     track: list[FaceSample] = []
     frame_idx = 0
     last_face: tuple[float, float, float, float] = DEFAULT_FACE
+    detections_count = 0
     try:
         while True:
             ok = cap.grab()
@@ -300,12 +313,18 @@ def _sample_face_track(
                 ok, frame = cap.retrieve()
                 if not ok:
                     break
-                # Downscale for detection speed — Blaze short-range
-                # only needs ~128px of face anyway.
+                # Higher detection resolution so corner face cams (often
+                # only 250–350 px in a 1920×1080 frame) keep enough
+                # pixels for the Blaze model. ~2× more compute than the
+                # 640 default but still well within the per-frame budget.
                 h, w = frame.shape[:2]
-                if w > 640:
-                    scale = 640 / w
-                    small = cv2.resize(frame, (int(w * scale), int(h * scale)))
+                if w > _DETECT_INPUT_WIDTH:
+                    scale = _DETECT_INPUT_WIDTH / w
+                    small = cv2.resize(
+                        frame,
+                        (int(w * scale), int(h * scale)),
+                        interpolation=cv2.INTER_AREA,
+                    )
                 else:
                     small = frame
                 rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
@@ -314,26 +333,42 @@ def _sample_face_track(
                 t = frame_idx / max(src_fps, 1.0)
                 if result.detections:
                     sw, sh = small.shape[1], small.shape[0]
-                    best = max(
-                        result.detections,
-                        key=lambda d: d.bounding_box.width * d.bounding_box.height,
-                    )
-                    bb = best.bounding_box
-                    cx = (bb.origin_x + bb.width / 2) / max(sw, 1)
-                    cy = (bb.origin_y + bb.height / 2) / max(sh, 1)
-                    bw = bb.width / max(sw, 1)
-                    bh = bb.height / max(sh, 1)
-                    last_face = (
-                        max(0.0, min(1.0, cx)),
-                        max(0.0, min(1.0, cy)),
-                        max(0.0, min(1.0, bw)),
-                        max(0.0, min(1.0, bh)),
-                    )
+                    # Reject detections that are absurdly tiny (false
+                    # positives on game UI elements) or > 60% of source
+                    # (probably an actual game character / banner, not
+                    # the streamer's cam).
+                    candidates = [
+                        d for d in result.detections
+                        if 0.01 < (d.bounding_box.width / max(sw, 1)) < 0.6
+                        and 0.01 < (d.bounding_box.height / max(sh, 1)) < 0.6
+                    ]
+                    if candidates:
+                        best = max(
+                            candidates,
+                            key=lambda d: d.bounding_box.width * d.bounding_box.height,
+                        )
+                        bb = best.bounding_box
+                        cx = (bb.origin_x + bb.width / 2) / max(sw, 1)
+                        cy = (bb.origin_y + bb.height / 2) / max(sh, 1)
+                        bw = bb.width / max(sw, 1)
+                        bh = bb.height / max(sh, 1)
+                        last_face = (
+                            max(0.0, min(1.0, cx)),
+                            max(0.0, min(1.0, cy)),
+                            max(0.0, min(1.0, bw)),
+                            max(0.0, min(1.0, bh)),
+                        )
+                        detections_count += 1
                 track.append((t, *last_face))
             frame_idx += 1
     finally:
         cap.release()
         detector.close()
+
+    log.info(
+        "reframe: face track sampled %d frames, %d had detections",
+        len(track), detections_count,
+    )
 
     if not track:
         track = [(0.0, *DEFAULT_FACE), (probe.duration_s, *DEFAULT_FACE)]
@@ -552,9 +587,12 @@ def _cam_crop_box(
     face_px_x = face_x * src_w
     face_px_y = face_y * src_h
 
-    # Desired: head padding above (0.5× face_h) + face + shoulders (1.5× face_h).
-    crop_h_target = face_px_h * 3.0
-    crop_w_target = face_px_w * 2.6
+    # Desired crop: head padding above + face + shoulders + arms below
+    # + side padding. Larger multiplier than a head-and-shoulders portrait
+    # to give corner face cams enough surrounding context that the band
+    # doesn't look like a face filling the whole upper half of the clip.
+    crop_h_target = face_px_h * 4.5
+    crop_w_target = face_px_w * 4.0
 
     # Snap to the cam band's aspect ratio.
     if crop_w_target / max(crop_h_target, 1.0) < target_aspect:
