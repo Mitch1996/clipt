@@ -13,6 +13,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Admin · Watch — Clipt" };
+// Channel live-state updates every ~30s via the live worker scheduler.
+// Don't statically cache the page or the dashboard reads stale data.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://clipt.live";
 
