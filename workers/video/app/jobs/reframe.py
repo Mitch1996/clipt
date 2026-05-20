@@ -635,10 +635,11 @@ def _corner_preset_region(
     corner: CornerHint, src_w: int, src_h: int, target_aspect: float,
 ) -> tuple[int, int, int, int]:
     """When auto-detection fails we fall back to a standard OBS-shaped
-    rectangle at the streamer-specified corner. ~25% of width × 30% of
-    height matches the most common face-cam scene in OBS templates."""
-    cam_w_norm = 0.28
-    cam_h_norm = 0.36
+    rectangle at the streamer-specified corner. Tuned to crop tight on
+    the streamer's face, skipping the surrounding OBS chrome (chat
+    overlays, name tags) that OpusClip-style edits don't include."""
+    cam_w_norm = 0.22
+    cam_h_norm = 0.27
     if corner == "top_left":
         x_norm, y_norm = 0.02, 0.02
     elif corner == "bottom_left":
@@ -747,12 +748,30 @@ def _resolve_locked_cam_region(
         "reframe: locked region from cluster %s (n=%d)", dominant, len(samples),
     )
 
-    # Average bbox of the dominant cluster.
+    # If the dominant cluster is in a corner, use the standard OBS-shaped
+    # corner preset rectangle — it's a much more reliable size for a
+    # face cam than the dynamically-sized bbox from MediaPipe (which
+    # includes head + some surrounding hair/background and varies frame
+    # to frame). The corner preset gives a predictable, OpusClip-style
+    # cam zone every time.
+    cluster_to_corner = {
+        "top_left": "top_left",
+        "top_right": "top_right",
+        "bottom_left": "bottom_left",
+        "bottom_right": "bottom_right",
+    }
+    if dominant in cluster_to_corner:
+        return _corner_preset_region(
+            cluster_to_corner[dominant], src_w, src_h, target_aspect,
+        )
+
+    # Mid-edge clusters (top_mid, mid_left, etc.) — average the face
+    # bbox in that region and crop tight. Catches off-corner / centred
+    # face cams.
     avg_x = sum(s[1] for s in samples) / len(samples)
     avg_y = sum(s[2] for s in samples) / len(samples)
     avg_w = sum(s[3] for s in samples) / len(samples)
     avg_h = sum(s[4] for s in samples) / len(samples)
-
     return _cam_crop_box(
         avg_x, avg_y, avg_w, avg_h, src_w, src_h, target_aspect,
     )
