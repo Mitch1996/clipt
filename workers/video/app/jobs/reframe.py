@@ -343,10 +343,30 @@ def _sample_face_track(
                         and 0.01 < (d.bounding_box.height / max(sh, 1)) < 0.6
                     ]
                     if candidates:
-                        best = max(
-                            candidates,
-                            key=lambda d: d.bounding_box.width * d.bounding_box.height,
-                        )
+                        # Score = bbox area × corner-position weight.
+                        # Streamer face cams are essentially always in a
+                        # corner of the OBS layout; central detections
+                        # are usually false positives (game characters,
+                        # torch handles, banners). Weighting lets a
+                        # smaller-but-cornered detection beat a larger
+                        # central false positive without rejecting the
+                        # "talking head" case outright.
+                        def _score(d):
+                            bb = d.bounding_box
+                            cx = (bb.origin_x + bb.width / 2) / max(sw, 1)
+                            cy = (bb.origin_y + bb.height / 2) / max(sh, 1)
+                            edge_dist = min(cx, 1 - cx, cy, 1 - cy)
+                            if edge_dist < 0.15:
+                                w = 8.0  # tight against an edge — almost certainly real cam
+                            elif edge_dist < 0.25:
+                                w = 3.0  # corner-ish
+                            elif edge_dist > 0.35:
+                                w = 0.2  # squarely central — heavily penalise
+                            else:
+                                w = 1.0
+                            return w * bb.width * bb.height
+
+                        best = max(candidates, key=_score)
                         bb = best.bounding_box
                         cx = (bb.origin_x + bb.width / 2) / max(sw, 1)
                         cy = (bb.origin_y + bb.height / 2) / max(sh, 1)
@@ -365,10 +385,21 @@ def _sample_face_track(
         cap.release()
         detector.close()
 
-    log.info(
-        "reframe: face track sampled %d frames, %d had detections",
-        len(track), detections_count,
-    )
+    # Dominant face location across the clip — useful when the bbox
+    # tracks consistently to one corner (likely a face cam) vs.
+    # bouncing around (likely false positives the corner-preference
+    # weighting still couldn't fully suppress).
+    if track:
+        avg_x = sum(s[1] for s in track) / len(track)
+        avg_y = sum(s[2] for s in track) / len(track)
+        avg_w = sum(s[3] for s in track) / len(track)
+        log.info(
+            "reframe: face track sampled %d frames, %d detections, "
+            "avg center=(%.2f, %.2f) avg_w=%.2f",
+            len(track), detections_count, avg_x, avg_y, avg_w,
+        )
+    else:
+        log.info("reframe: face track empty — using DEFAULT_FACE")
 
     if not track:
         track = [(0.0, *DEFAULT_FACE), (probe.duration_s, *DEFAULT_FACE)]
