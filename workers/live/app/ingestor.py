@@ -146,6 +146,7 @@ async def run_ingestor(
 
     seen_urls: set[str] = set()
     persisted_keys: list[tuple[float, str]] = []  # (ts_seconds, s3_key)
+    bg_tasks: set[asyncio.Task[None]] = set()
     last_segment_at = time.time()
     bytes_total = 0
     segments_total = 0
@@ -215,9 +216,15 @@ async def run_ingestor(
 
                 # Hand the segment to the audio-energy detector (Phase
                 # 2.3) — best-effort, never let it block the loop.
+                # We retain references to the spawned tasks because
+                # `asyncio.create_task` only holds a weak reference and
+                # the GC can drop a task mid-execution otherwise (see
+                # Python asyncio docs).
                 if on_segment is not None:
                     try:
-                        asyncio.create_task(on_segment(seg_bytes))
+                        task = asyncio.create_task(on_segment(seg_bytes))
+                        bg_tasks.add(task)
+                        task.add_done_callback(bg_tasks.discard)
                     except Exception as exc:  # noqa: BLE001
                         log.warning(
                             "ingestor[%s]: on_segment hook raised %s",
@@ -258,6 +265,17 @@ async def run_ingestor(
             except asyncio.TimeoutError:
                 pass
     finally:
+        # Drain pending on_segment background tasks so the last few
+        # audio probes get their metric increments + hype-event fires
+        # before we tear the loop down.
+        if bg_tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*bg_tasks, return_exceptions=True),
+                    timeout=5.0,
+                )
+            except asyncio.TimeoutError:
+                pass
         # Best-effort cleanup of remaining buffer on stop. The probe
         # endpoint passes keep_artifacts=True so a developer can
         # inspect / stitch the captured segments after the run.
