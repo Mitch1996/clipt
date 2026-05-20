@@ -184,6 +184,7 @@ export type Database = {
           earnings_cents: number
           id: string
           processing_error: string | null
+          processing_step: string | null
           source_channel_id: string | null
           source_codec: string | null
           source_creator_profile_id: string | null
@@ -210,6 +211,7 @@ export type Database = {
           earnings_cents?: number
           id?: string
           processing_error?: string | null
+          processing_step?: string | null
           source_channel_id?: string | null
           source_codec?: string | null
           source_creator_profile_id?: string | null
@@ -236,6 +238,7 @@ export type Database = {
           earnings_cents?: number
           id?: string
           processing_error?: string | null
+          processing_step?: string | null
           source_channel_id?: string | null
           source_codec?: string | null
           source_creator_profile_id?: string | null

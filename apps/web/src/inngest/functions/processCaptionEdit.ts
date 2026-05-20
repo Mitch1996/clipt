@@ -69,7 +69,11 @@ export const processCaptionEdit = inngest.createFunction(
     await step.run("mark-processing", async () => {
       const { error } = await supabase
         .from("clips")
-        .update({ status: "processing", processing_error: null })
+        .update({
+          status: "processing",
+          processing_step: "reframing",
+          processing_error: null,
+        })
         .eq("id", clipId);
       if (error) throw error;
     });
@@ -96,7 +100,11 @@ export const processCaptionEdit = inngest.createFunction(
     await step.run("mark-ready", async () => {
       const { error } = await supabase
         .from("clips")
-        .update({ status: "ready", processing_error: null })
+        .update({
+          status: "ready",
+          processing_step: null,
+          processing_error: null,
+        })
         .eq("id", clipId);
       if (error) throw error;
     });

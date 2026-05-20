@@ -58,11 +58,18 @@ export const processClip = inngest.createFunction(
       return data;
     });
 
-    // 2. Mark processing
+    // 2. Mark processing. We also stamp processing_step so the UI can
+    //    show "Downloading source video..." instead of a generic
+    //    "processing". Each major phase below updates this string before
+    //    the long-running call so the dashboard reflects reality.
     await step.run("mark-processing", async () => {
       const { error } = await supabase
         .from("clips")
-        .update({ status: "processing", processing_error: null })
+        .update({
+          status: "processing",
+          processing_step: "downloading-source",
+          processing_error: null,
+        })
         .eq("id", clipId);
       if (error) throw error;
     });
@@ -87,7 +94,11 @@ export const processClip = inngest.createFunction(
         await step.run("mark-failed", async () => {
           await supabase
             .from("clips")
-            .update({ status: "failed", processing_error: message })
+            .update({
+              status: "failed",
+              processing_step: null,
+              processing_error: message,
+            })
             .eq("id", clipId);
         });
         throw new NonRetriableError(message);
@@ -141,6 +152,13 @@ export const processClip = inngest.createFunction(
     });
 
     // 5. Transcribe via worker (stub today — real Whisper in Prompt 1.9).
+    await step.run("mark-transcribing", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({ processing_step: "transcribing" })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
     const transcribed = await step.run("transcribe", () =>
       callTranscribe({
         clipId,
@@ -183,9 +201,15 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 7. Reframe (stub today — real MediaPipe + ffmpeg in Prompt 1.10).
-    //    Pass the attribution token so the worker can ffmpeg it into
-    //    `-metadata clipt_attribution=<jwt>`.
+    // 7. Reframe (real MediaPipe + ffmpeg). Pass the attribution token
+    //    so the worker can ffmpeg it into `-metadata clipt_attribution=<jwt>`.
+    await step.run("mark-reframing", async () => {
+      const { error } = await supabase
+        .from("clips")
+        .update({ processing_step: "reframing" })
+        .eq("id", clipId);
+      if (error) throw error;
+    });
     const reframed = await step.run("reframe", () =>
       callReframe({
         clipId,
@@ -207,11 +231,16 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // 8. Mark ready
+    // 8. Mark ready — clear processing_step so the UI flips off the
+    //    progress label.
     await step.run("mark-ready", async () => {
       const { error } = await supabase
         .from("clips")
-        .update({ status: "ready", processing_error: null })
+        .update({
+          status: "ready",
+          processing_step: null,
+          processing_error: null,
+        })
         .eq("id", clipId);
       if (error) throw error;
     });

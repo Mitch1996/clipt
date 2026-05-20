@@ -19,6 +19,7 @@ type ClipRow = Database["public"]["Tables"]["clips"]["Row"];
 export interface ClipStatusLiveProps {
   clipId: string;
   initialStatus: ClipStatus;
+  initialStep: string | null;
   initialError: string | null;
 }
 
@@ -30,14 +31,25 @@ const SUB_STATUS: Record<ClipStatus, string> = {
   failed: "Something went wrong. Hit retry to try again.",
 };
 
+// Maps the processing_step token that processClip writes per-phase
+// into user-facing copy. Keep in sync with the strings in
+// apps/web/src/inngest/functions/processClip.ts.
+const STEP_LABELS: Record<string, string> = {
+  "downloading-source": "Downloading source video…",
+  transcribing: "Generating captions with Whisper…",
+  reframing: "Reframing to vertical 9:16 with burned captions…",
+};
+
 export function ClipStatusLive({
   clipId,
   initialStatus,
+  initialStep,
   initialError,
 }: ClipStatusLiveProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [status, setStatus] = React.useState<ClipStatus>(initialStatus);
+  const [step, setStep] = React.useState<string | null>(initialStep);
   const [error, setError] = React.useState<string | null>(initialError);
   const [retrying, setRetrying] = React.useState(false);
 
@@ -56,6 +68,7 @@ export function ClipStatusLive({
         (payload) => {
           const row = payload.new as ClipRow;
           setStatus(row.status as ClipStatus);
+          setStep(row.processing_step ?? null);
           setError(row.processing_error ?? null);
           // When the row reaches a terminal state, refresh server data
           // so the page picks up new R2 keys, captions, etc.
@@ -70,6 +83,13 @@ export function ClipStatusLive({
       void supabase.removeChannel(channel);
     };
   }, [clipId, router]);
+
+  // When status is "processing" and we have a known step, prefer the
+  // granular copy; otherwise fall back to the broad status sub-line.
+  const subline =
+    status === "processing" && step && STEP_LABELS[step]
+      ? STEP_LABELS[step]
+      : SUB_STATUS[status];
 
   const onRetry = async () => {
     setRetrying(true);
@@ -96,9 +116,7 @@ export function ClipStatusLive({
           <h2 className="text-lg font-semibold tracking-[-0.01em]">
             <StatusLabel status={status} />
           </h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {SUB_STATUS[status]}
-          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{subline}</p>
         </div>
       </div>
 

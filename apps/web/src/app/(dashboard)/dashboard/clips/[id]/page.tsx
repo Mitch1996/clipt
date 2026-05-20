@@ -50,7 +50,7 @@ export default async function ClipDetailPage({
   const { data: clip } = await supabase
     .from("clips")
     .select(
-      "id, status, processing_error, source_url, source_platform, source_kind, title, visibility, captions_json, vertical_video_r2_key, created_at",
+      "id, status, processing_step, processing_error, source_url, source_platform, source_kind, title, visibility, captions_json, vertical_video_r2_key, created_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -136,6 +136,7 @@ export default async function ClipDetailPage({
         <ClipStatusLive
           clipId={clip.id}
           initialStatus={clip.status as ClipStatus}
+          initialStep={clip.processing_step}
           initialError={clip.processing_error}
         />
       )}
