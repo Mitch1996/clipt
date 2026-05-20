@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 import httpx
 from supabase import Client, create_client
 
+from .audio_energy import AudioEnergyDetector
 from .config import settings
 from .ingestor import IngestorRunResult, run_ingestor
 from .inngest_send import send_event
@@ -168,6 +169,21 @@ class Scheduler:
             running = self._tasks.get(channel_id)
             if status.is_live and not running:
                 cancel_event = asyncio.Event()
+
+                # Audio-energy detector lives for the duration of the
+                # ingestor. Shares the same hype-moment handler as the
+                # chat-side spike detector — the Inngest debounce in
+                # liveHypeMoment (Phase 2.3+) will merge close-in-time
+                # signals on the same channel.
+                async def on_audio_hype(_cid: str, reason: str, hpayload: dict) -> None:
+                    HYPE_MOMENTS_FIRED.labels(reason=reason).inc()
+                    await send_event(name="clip/hype-moment", data=hpayload)
+
+                audio = AudioEnergyDetector(
+                    channel_id=channel_id,
+                    channel_login=login,
+                    on_hype=on_audio_hype,
+                )
                 task = asyncio.create_task(
                     run_ingestor(
                         channel_id=channel_id,
@@ -175,6 +191,7 @@ class Scheduler:
                         http=self._http,
                         redis=self._redis,
                         cancel_event=cancel_event,
+                        on_segment=audio.on_segment,
                     ),
                     name=f"ingestor-{channel_id[:8]}",
                 )

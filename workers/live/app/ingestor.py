@@ -24,6 +24,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from typing import Awaitable, Callable
 
 import boto3
 import httpx
@@ -120,6 +121,7 @@ async def run_ingestor(
     redis: UpstashClient,
     cancel_event: asyncio.Event,
     keep_artifacts: bool = False,
+    on_segment: Callable[[bytes], Awaitable[None]] | None = None,
 ) -> IngestorRunResult:
     cfg = settings()
     s3 = _s3_client()
@@ -210,6 +212,17 @@ async def run_ingestor(
                 last_segment_at = ts
                 SEGMENTS_PERSISTED.inc()
                 BYTES_INGESTED.inc(len(seg_bytes))
+
+                # Hand the segment to the audio-energy detector (Phase
+                # 2.3) — best-effort, never let it block the loop.
+                if on_segment is not None:
+                    try:
+                        asyncio.create_task(on_segment(seg_bytes))
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "ingestor[%s]: on_segment hook raised %s",
+                            channel_id[:8], exc,
+                        )
 
             # Prune segments older than the rolling buffer window.
             cutoff = time.time() - cfg.rolling_buffer_s

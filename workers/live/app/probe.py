@@ -30,6 +30,7 @@ from botocore.client import Config as BotoConfig
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from .audio_energy import AudioEnergyDetector
 from .config import settings
 from .ingestor import run_ingestor
 from .inngest_send import send_event
@@ -123,6 +124,17 @@ async def probe_channel(
             channel_login=payload.login, on_message=on_message
         )
 
+    # Audio-energy detector also shares the hype-moment Inngest event.
+    async def on_audio_hype(_cid: str, reason: str, hpayload: dict) -> None:
+        HYPE_MOMENTS_FIRED.labels(reason=reason).inc()
+        await send_event(name="clip/hype-moment", data=hpayload)
+
+    audio = AudioEnergyDetector(
+        channel_id=synthetic_channel_id,
+        channel_login=payload.login,
+        on_hype=on_audio_hype,
+    )
+
     async def _run():
         chat_listener_task: asyncio.Task[None] | None = None
         chat_detector_task: asyncio.Task[None] | None = None
@@ -142,6 +154,7 @@ async def probe_channel(
                     redis=redis,
                     cancel_event=cancel,
                     keep_artifacts=payload.keep_artifacts,
+                    on_segment=audio.on_segment,
                 ),
                 timeout=payload.duration_s,
             )

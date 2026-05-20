@@ -57,3 +57,10 @@ HYPE_MOMENTS_FIRED = Counter(
     "Number of clip/hype-moment Inngest events emitted by the spike detectors.",
     ["reason"],
 )
+
+# Audio-energy detector samples (Phase 2.3). Counts how many segment
+# loudness probes have completed since process start across all channels.
+AUDIO_SAMPLES_TAKEN = Counter(
+    "clipt_live_audio_samples_taken_total",
+    "Segment loudness probes completed by the audio-energy detector.",
+)
