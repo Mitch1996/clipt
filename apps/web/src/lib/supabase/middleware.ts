@@ -10,8 +10,47 @@ import type { Database } from "@/types/database";
  *   - Authed user hitting /auth/*         -> redirect to /dashboard
  *     (except /auth/callback, which always passes through so the OAuth
  *     code-exchange can run before the session cookie exists)
+ *
+ * Also enforces the **private-preview gate**: if `SITE_GATE_USER` +
+ * `SITE_GATE_PASSWORD` are set in env, anything under `/auth` or
+ * `/dashboard` requires HTTP Basic Auth on top of the normal session
+ * check. The public landing page (`/`) and public clip pages (`/c/*`)
+ * stay open so Stripe + the waitlist work. Unset both env vars to drop
+ * the gate (local dev, or after public launch).
  */
+
+const GATED_PATH_PREFIXES = ["/auth", "/dashboard"];
+
+function isGatedPath(pathname: string): boolean {
+  return GATED_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+function checkBasicAuth(request: NextRequest): boolean {
+  const user = process.env.SITE_GATE_USER;
+  const pass = process.env.SITE_GATE_PASSWORD;
+  if (!user || !pass) return true;
+  const header = request.headers.get("authorization");
+  if (!header?.startsWith("Basic ")) return false;
+  try {
+    const decoded = atob(header.slice(6));
+    return decoded === `${user}:${pass}`;
+  } catch {
+    return false;
+  }
+}
+
+function basicAuthChallenge(): NextResponse {
+  return new NextResponse("Authentication required.", {
+    status: 401,
+    headers: { "WWW-Authenticate": 'Basic realm="Clipt private preview"' },
+  });
+}
+
 export async function updateSession(request: NextRequest) {
+  if (isGatedPath(request.nextUrl.pathname) && !checkBasicAuth(request)) {
+    return basicAuthChallenge();
+  }
+
   let response = NextResponse.next({ request });
 
   // Fail-open if Supabase isn't configured for this deployment (e.g. a
