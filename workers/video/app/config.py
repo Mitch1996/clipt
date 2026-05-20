@@ -39,9 +39,12 @@ class Settings:
         # Cloudflare R2 takes priority when present. Otherwise use the
         # Supabase Storage S3-compatible endpoint, which any Supabase
         # project exposes at <project>.supabase.co/storage/v1/s3.
+        # Coerce empty strings to None — Fly preserves unset secrets as
+        # literal "" which boto3 rejects with "Invalid endpoint".
         endpoint = (
             os.environ.get("R2_ENDPOINT")
             or os.environ.get("STORAGE_ENDPOINT_URL")
+            or None
         )
         access_key = (
             os.environ.get("R2_ACCESS_KEY_ID")

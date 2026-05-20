@@ -26,14 +26,18 @@ from .config import settings
 @lru_cache(maxsize=1)
 def _client():
     s = settings()
-    return boto3.client(
-        "s3",
-        endpoint_url=s.storage_endpoint_url,
-        aws_access_key_id=s.storage_access_key_id,
-        aws_secret_access_key=s.storage_secret_access_key,
-        region_name=s.storage_region,
-        config=Config(signature_version="s3v4"),
-    )
+    # Only pass endpoint_url when truthy — boto3 picks the default AWS
+    # regional endpoint when omitted, but errors with "Invalid endpoint"
+    # if given an empty string.
+    kwargs: dict = {
+        "aws_access_key_id": s.storage_access_key_id,
+        "aws_secret_access_key": s.storage_secret_access_key,
+        "region_name": s.storage_region,
+        "config": Config(signature_version="s3v4"),
+    }
+    if s.storage_endpoint_url:
+        kwargs["endpoint_url"] = s.storage_endpoint_url
+    return boto3.client("s3", **kwargs)
 
 
 def put_bytes(key: str, data: bytes, content_type: str) -> None:
