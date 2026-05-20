@@ -16,6 +16,7 @@ import { SignJWT } from "jose";
  */
 
 const AUDIENCE = "clipt-video-worker";
+const LIVE_AUDIENCE = "clipt-live-worker";
 
 function getWorkerEnv() {
   const url = process.env.VIDEO_WORKER_URL;
@@ -28,7 +29,18 @@ function getWorkerEnv() {
   return { url: url.replace(/\/$/, ""), key };
 }
 
-async function mintToken(): Promise<string> {
+function getLiveWorkerEnv() {
+  const url = process.env.LIVE_WORKER_URL;
+  const key = process.env.WORKER_HMAC_KEY;
+  if (!url || !key) {
+    throw new Error(
+      "Live worker not configured: set LIVE_WORKER_URL and WORKER_HMAC_KEY in .env.local",
+    );
+  }
+  return { url: url.replace(/\/$/, ""), key };
+}
+
+async function mintToken(audience: string = AUDIENCE): Promise<string> {
   const { key } = getWorkerEnv();
   // The worker's HMAC key is base64-encoded 32 bytes. jose's HS256
   // signer takes the raw bytes; we don't need to base64-decode the
@@ -40,7 +52,7 @@ async function mintToken(): Promise<string> {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("5m")
-    .setAudience(AUDIENCE)
+    .setAudience(audience)
     .sign(secret);
 }
 
@@ -59,6 +71,26 @@ async function callWorker<TIn, TOut>(path: string, body: TIn): Promise<TOut> {
     const text = await res.text();
     throw new Error(
       `worker ${path} failed: ${res.status} ${text.slice(0, 300)}`,
+    );
+  }
+  return (await res.json()) as TOut;
+}
+
+async function callLiveWorker<TIn, TOut>(path: string, body: TIn): Promise<TOut> {
+  const { url } = getLiveWorkerEnv();
+  const token = await mintToken(LIVE_AUDIENCE);
+  const res = await fetch(`${url}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `live-worker ${path} failed: ${res.status} ${text.slice(0, 300)}`,
     );
   }
   return (await res.json()) as TOut;
@@ -121,3 +153,24 @@ export async function callHealth(): Promise<HealthOut> {
   if (!res.ok) throw new Error(`worker /healthz failed: ${res.status}`);
   return (await res.json()) as HealthOut;
 }
+
+// ─── Live worker (Phase 2.2 chat → clip pipeline) ────────────────────
+
+export interface StitchLiveWindowIn {
+  channelId: string;
+  channelLogin?: string;
+  windowStartMs: number;
+  windowEndMs: number;
+  newClipId: string;
+}
+export interface StitchLiveWindowOut {
+  sourceR2Key: string;
+  durationSec: number;
+  segmentCount: number;
+  bytesTotal: number;
+}
+export const callStitchLiveWindow = (input: StitchLiveWindowIn) =>
+  callLiveWorker<StitchLiveWindowIn, StitchLiveWindowOut>(
+    "/jobs/stitch-live-window",
+    input,
+  );

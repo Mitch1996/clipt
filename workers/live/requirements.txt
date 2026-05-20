@@ -15,6 +15,9 @@ boto3>=1.36,<2
 # is_live / last_live_check / last_live_at. Service-role key only.
 supabase>=2.9,<3
 
+# JWT verification (mirrors workers/video for cross-worker auth).
+python-jose[cryptography]>=3.3,<4
+
 # Twitch IRC chat listener — anonymous justinfan websocket. Phase 2.2.
 websockets>=13.1,<16
 

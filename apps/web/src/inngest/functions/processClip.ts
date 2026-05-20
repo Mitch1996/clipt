@@ -51,12 +51,20 @@ export const processClip = inngest.createFunction(
     const clip = await step.run("load-clip", async () => {
       const { data, error } = await supabase
         .from("clips")
-        .select("id, status, source_url, source_platform, source_kind, source_channel_id, source_creator_profile_id")
+        .select(
+          "id, status, source_url, source_platform, source_kind, source_channel_id, source_creator_profile_id, video_r2_key, duration_seconds, source_width, source_height",
+        )
         .eq("id", clipId)
         .single();
       if (error || !data) throw new Error(`clip ${clipId} not found`);
       return data;
     });
+
+    // Live-auto clips have the source pre-stitched into S3 by the
+    // live worker (see liveHypeMoment + workers/live jobs/stitch-live-window).
+    // For those rows we skip the URL download + creator-resolve steps;
+    // both fields are already set on the row.
+    const isLiveAuto = clip.source_kind === "live_auto" && !!clip.video_r2_key;
 
     // 2. Mark processing. We also stamp processing_step so the UI can
     //    show "Downloading source video..." instead of a generic
@@ -76,80 +84,117 @@ export const processClip = inngest.createFunction(
 
     // 3. Download. UnsupportedSourceError + SourceDownloadError are
     //    *terminal* — fail the row immediately and stop the run.
-    let downloaded;
-    try {
-      downloaded = await step.run("download-source", () =>
-        downloadSource(clipId, clip.source_url ?? ""),
-      );
-    } catch (err) {
-      const isTerminal =
-        err instanceof Error &&
-        (err.name === "UnsupportedSourceError" ||
-          err.name === "SourceDownloadError" ||
-          err instanceof UnsupportedSourceError ||
-          err instanceof SourceDownloadError);
+    //    live_auto skips the network fetch: the live worker already
+    //    wrote the source mp4 to S3 + stamped video_r2_key / duration
+    //    on the row.
+    let downloaded: {
+      videoR2Key: string;
+      durationSeconds: number;
+      originalWidth: number | null;
+      originalHeight: number | null;
+      title?: string | null;
+      sourceCreator: {
+        platformUserId: string;
+        platformUsername?: string;
+        platformLogin?: string;
+      } | null;
+    };
+    if (isLiveAuto) {
+      downloaded = {
+        videoR2Key: clip.video_r2_key!,
+        durationSeconds: clip.duration_seconds ?? 0,
+        originalWidth: clip.source_width,
+        originalHeight: clip.source_height,
+        sourceCreator: null,
+      };
+    } else {
+      try {
+        downloaded = await step.run("download-source", () =>
+          downloadSource(clipId, clip.source_url ?? ""),
+        );
+      } catch (err) {
+        const isTerminal =
+          err instanceof Error &&
+          (err.name === "UnsupportedSourceError" ||
+            err.name === "SourceDownloadError" ||
+            err instanceof UnsupportedSourceError ||
+            err instanceof SourceDownloadError);
 
-      if (isTerminal) {
-        const message = err instanceof Error ? err.message : String(err);
-        await step.run("mark-failed", async () => {
-          await supabase
-            .from("clips")
-            .update({
-              status: "failed",
-              processing_step: null,
-              processing_error: message,
-            })
-            .eq("id", clipId);
-        });
-        throw new NonRetriableError(message);
+        if (isTerminal) {
+          const message = err instanceof Error ? err.message : String(err);
+          await step.run("mark-failed", async () => {
+            await supabase
+              .from("clips")
+              .update({
+                status: "failed",
+                processing_step: null,
+                processing_error: message,
+              })
+              .eq("id", clipId);
+          });
+          throw new NonRetriableError(message);
+        }
+        throw err;
       }
-      throw err;
-    }
 
-    await step.run("persist-source-meta", async () => {
-      const { error } = await supabase
-        .from("clips")
-        .update({
-          video_r2_key: downloaded.videoR2Key,
-          duration_seconds: downloaded.durationSeconds,
-          source_width: downloaded.originalWidth,
-          source_height: downloaded.originalHeight,
-        })
-        .eq("id", clipId);
-      if (error) throw error;
-    });
+      await step.run("persist-source-meta", async () => {
+        const { error } = await supabase
+          .from("clips")
+          .update({
+            video_r2_key: downloaded.videoR2Key,
+            duration_seconds: downloaded.durationSeconds,
+            source_width: downloaded.originalWidth,
+            source_height: downloaded.originalHeight,
+          })
+          .eq("id", clipId);
+        if (error) throw error;
+      });
+    }
 
     // 4. Resolve source-creator profile via the channels table. If the
     //    streamer has connected their channel to Clipt we link the clip
     //    to their profile; otherwise leave both fields null and revisit
     //    if they connect later.
-    const resolved = await step.run("resolve-source-creator", async () => {
-      if (!downloaded.sourceCreator) return { channelId: null, profileId: null };
-      const { data } = await supabase
-        .from("channels")
-        .select("id, owner_id")
-        .eq("platform", clip.source_platform!)
-        .eq("platform_user_id", downloaded.sourceCreator.platformUserId)
-        .maybeSingle();
-      return {
-        channelId: data?.id ?? null,
-        profileId: data?.owner_id ?? null,
-      };
-    });
+    //
+    //    live_auto already has source_channel_id + source_creator_profile_id
+    //    set by liveHypeMoment (it's literally the channel that fired
+    //    the hype event), so we skip this step too.
+    const resolved = isLiveAuto
+      ? {
+          channelId: clip.source_channel_id,
+          profileId: clip.source_creator_profile_id,
+        }
+      : await step.run("resolve-source-creator", async () => {
+          if (!downloaded.sourceCreator) {
+            return { channelId: null, profileId: null };
+          }
+          const { data } = await supabase
+            .from("channels")
+            .select("id, owner_id")
+            .eq("platform", clip.source_platform!)
+            .eq("platform_user_id", downloaded.sourceCreator.platformUserId)
+            .maybeSingle();
+          return {
+            channelId: data?.id ?? null,
+            profileId: data?.owner_id ?? null,
+          };
+        });
 
-    // Always overwrite, even when both are null — the JWT carries the
-    // resolved values, so the row must match (avoids a stale value
-    // surviving from createClipFromUrl).
-    await step.run("persist-source-creator", async () => {
-      const { error } = await supabase
-        .from("clips")
-        .update({
-          source_channel_id: resolved.channelId,
-          source_creator_profile_id: resolved.profileId,
-        })
-        .eq("id", clipId);
-      if (error) throw error;
-    });
+    if (!isLiveAuto) {
+      // Always overwrite, even when both are null — the JWT carries the
+      // resolved values, so the row must match (avoids a stale value
+      // surviving from createClipFromUrl).
+      await step.run("persist-source-creator", async () => {
+        const { error } = await supabase
+          .from("clips")
+          .update({
+            source_channel_id: resolved.channelId,
+            source_creator_profile_id: resolved.profileId,
+          })
+          .eq("id", clipId);
+        if (error) throw error;
+      });
+    }
 
     // 5. Transcribe via worker (stub today — real Whisper in Prompt 1.9).
     await step.run("mark-transcribing", async () => {
