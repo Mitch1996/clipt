@@ -119,6 +119,7 @@ async def run_ingestor(
     http: httpx.AsyncClient,
     redis: UpstashClient,
     cancel_event: asyncio.Event,
+    keep_artifacts: bool = False,
 ) -> IngestorRunResult:
     cfg = settings()
     s3 = _s3_client()
@@ -244,12 +245,15 @@ async def run_ingestor(
             except asyncio.TimeoutError:
                 pass
     finally:
-        # Best-effort cleanup of remaining buffer on stop.
-        for _, key in persisted_keys:
-            try:
-                s3.delete_object(Bucket=cfg.storage_bucket, Key=key)
-            except Exception:  # noqa: BLE001
-                pass
+        # Best-effort cleanup of remaining buffer on stop. The probe
+        # endpoint passes keep_artifacts=True so a developer can
+        # inspect / stitch the captured segments after the run.
+        if not keep_artifacts:
+            for _, key in persisted_keys:
+                try:
+                    s3.delete_object(Bucket=cfg.storage_bucket, Key=key)
+                except Exception:  # noqa: BLE001
+                    pass
         try:
             await redis.delete(f"live:{channel_id}:latestSegment")
         except Exception:  # noqa: BLE001
