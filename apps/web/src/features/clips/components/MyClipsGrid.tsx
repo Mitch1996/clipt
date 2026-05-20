@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Film, Plus, Tv } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { StatusPill } from "./StatusPill";
 import type { MyClipRow } from "../server/listMyClips";
