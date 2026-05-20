@@ -79,7 +79,7 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
         {ent.status === "past_due" ? (
           <p className="mt-2 text-xs text-destructive">
             Last payment failed. Stripe will retry, but update your card in
-            "Manage subscription" if needed.
+            &ldquo;Manage subscription&rdquo; if needed.
           </p>
         ) : null}
       </div>
