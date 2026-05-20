@@ -18,6 +18,8 @@ export interface ProfileEntitlements {
   clipsRemaining: number | null; // null when unlimited
   renewsAt: string | null;
   status: string;
+  /** True for staff/founders. Bypasses the clip cap regardless of tier. */
+  isAdmin: boolean;
 }
 
 export async function getEntitlements(
@@ -27,16 +29,22 @@ export async function getEntitlements(
 
   const { data: profile, error } = await admin
     .from("profiles")
-    .select("subscription_tier, subscription_status, subscription_renews_at")
+    .select("role, subscription_tier, subscription_status, subscription_renews_at")
     .eq("id", profileId)
     .single();
   if (error || !profile) {
     throw new Error(`entitlements: profile ${profileId} not found`);
   }
 
+  const isAdmin = profile.role === "admin";
   const rawTier = (profile.subscription_tier ?? "free") as Tier;
   const status = profile.subscription_status ?? "inactive";
-  const effectiveTier: Tier = isPaidStatus(status) ? rawTier : "free";
+  // Admins are effectively on Pro — unlimited cap, all features unlocked.
+  const effectiveTier: Tier = isAdmin
+    ? "pro"
+    : isPaidStatus(status)
+      ? rawTier
+      : "free";
   const plan = PLANS[effectiveTier];
 
   // Clip count for the current calendar month. Soft-deleted clips still
@@ -50,19 +58,21 @@ export async function getEntitlements(
     .gte("created_at", monthStart);
   const clipsThisMonth = count ?? 0;
 
+  const monthlyClipLimit = isAdmin ? null : plan.monthlyClipLimit;
   const clipsRemaining =
-    plan.monthlyClipLimit === null
+    monthlyClipLimit === null
       ? null
-      : Math.max(0, plan.monthlyClipLimit - clipsThisMonth);
+      : Math.max(0, monthlyClipLimit - clipsThisMonth);
 
   return {
     tier: rawTier,
     effectiveTier,
-    monthlyClipLimit: plan.monthlyClipLimit,
+    monthlyClipLimit,
     clipsThisMonth,
     clipsRemaining,
     renewsAt: profile.subscription_renews_at,
     status,
+    isAdmin,
   };
 }
 
