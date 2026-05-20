@@ -60,11 +60,14 @@ export const processClip = inngest.createFunction(
       return data;
     });
 
-    // Live-auto clips have the source pre-stitched into S3 by the
-    // live worker (see liveHypeMoment + workers/live jobs/stitch-live-window).
+    // Live-source clips (auto-detected via hype moment + fan-tap-to-clip)
+    // have the source pre-stitched into S3 by the live worker (see
+    // liveHypeMoment + createLiveClip + workers/live jobs/stitch-live-window).
     // For those rows we skip the URL download + creator-resolve steps;
     // both fields are already set on the row.
-    const isLiveAuto = clip.source_kind === "live_auto" && !!clip.video_r2_key;
+    const isPreStitched =
+      (clip.source_kind === "live_auto" || clip.source_kind === "live_fan") &&
+      !!clip.video_r2_key;
 
     // 2. Mark processing. We also stamp processing_step so the UI can
     //    show "Downloading source video..." instead of a generic
@@ -99,7 +102,7 @@ export const processClip = inngest.createFunction(
         platformLogin?: string;
       } | null;
     };
-    if (isLiveAuto) {
+    if (isPreStitched) {
       downloaded = {
         videoR2Key: clip.video_r2_key!,
         durationSeconds: clip.duration_seconds ?? 0,
@@ -156,10 +159,11 @@ export const processClip = inngest.createFunction(
     //    to their profile; otherwise leave both fields null and revisit
     //    if they connect later.
     //
-    //    live_auto already has source_channel_id + source_creator_profile_id
-    //    set by liveHypeMoment (it's literally the channel that fired
-    //    the hype event), so we skip this step too.
-    const resolved = isLiveAuto
+    //    live_auto + live_fan already have source_channel_id +
+    //    source_creator_profile_id set by liveHypeMoment / createLiveClip
+    //    (it's literally the channel that fired the hype event / the
+    //    channel the fan tapped on), so we skip this step too.
+    const resolved = isPreStitched
       ? {
           channelId: clip.source_channel_id,
           profileId: clip.source_creator_profile_id,
@@ -180,7 +184,7 @@ export const processClip = inngest.createFunction(
           };
         });
 
-    if (!isLiveAuto) {
+    if (!isPreStitched) {
       // Always overwrite, even when both are null — the JWT carries the
       // resolved values, so the row must match (avoids a stale value
       // surviving from createClipFromUrl).
