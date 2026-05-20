@@ -53,6 +53,11 @@ export function ClipStatusLive({
   const [error, setError] = React.useState<string | null>(initialError);
   const [retrying, setRetrying] = React.useState(false);
 
+  // Status as a ref so the polling interval inside the effect can read
+  // the current value without re-mounting on every status transition.
+  const statusRef = React.useRef(status);
+  statusRef.current = status;
+
   React.useEffect(() => {
     const supabase = createClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -97,8 +102,33 @@ export function ClipStatusLive({
         .subscribe();
     })();
 
+    // Polling fallback. Realtime is the primary signal but if the
+    // websocket disconnects (mobile blip, Supabase free-tier pause,
+    // RLS broadcast hiccup) we'd otherwise look frozen. Cheap 3s poll
+    // converts worst-case latency to 3s. Self-stops once the clip
+    // reaches a terminal state — at that point router.refresh()
+    // already swaps the page over to the ReadyEditor.
+    const supabaseClient = createClient();
+    const interval = setInterval(async () => {
+      if (statusRef.current === "ready" || statusRef.current === "failed") return;
+      const { data } = await supabaseClient
+        .from("clips")
+        .select("status, processing_step, processing_error")
+        .eq("id", clipId)
+        .single();
+      if (!data) return;
+      const next = data.status as ClipStatus;
+      setStatus(next);
+      setStep(data.processing_step ?? null);
+      setError(data.processing_error ?? null);
+      if (next === "ready" || next === "failed") {
+        router.refresh();
+      }
+    }, 3000);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
       if (channel) {
         void supabase.removeChannel(channel);
       }

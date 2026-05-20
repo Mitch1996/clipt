@@ -28,6 +28,8 @@ export interface MyClipsRealtimeRefreshProps {
   userId: string;
 }
 
+const POLL_INTERVAL_MS = 5000;
+
 export function MyClipsRealtimeRefresh({ userId }: MyClipsRealtimeRefreshProps) {
   const router = useRouter();
 
@@ -66,8 +68,17 @@ export function MyClipsRealtimeRefresh({ userId }: MyClipsRealtimeRefreshProps) 
         .subscribe();
     })();
 
+    // Polling fallback. Realtime should always be the primary signal,
+    // but if the websocket disconnects (mobile network blip, Supabase
+    // free-tier pause, RLS broadcast filter, etc.) the dashboard would
+    // otherwise feel frozen. A cheap 5s router.refresh() converges
+    // worst-case latency to 5s without any extra DB roundtrips beyond
+    // what the dashboard already does.
+    const interval = setInterval(() => router.refresh(), POLL_INTERVAL_MS);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
       if (pending) clearTimeout(pending);
       if (channel) void supabase.removeChannel(channel);
     };
