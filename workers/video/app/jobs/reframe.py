@@ -618,17 +618,19 @@ def _cam_crop_box(
     face_px_x = face_x * src_w
     face_px_y = face_y * src_h
 
-    # Desired crop: head padding above + face + shoulders + arms below
-    # + side padding. Larger multiplier than a head-and-shoulders portrait
-    # to give corner face cams enough surrounding context that the band
-    # doesn't look like a face filling the whole upper half of the clip.
-    crop_h_target = face_px_h * 4.5
-    crop_w_target = face_px_w * 4.0
+    # Drive the crop height from face height (1.8× = head + a little
+    # neck + a sliver of shoulders), then derive width from the target
+    # aspect. This is the OpusClip-style "face fills the cam zone" look
+    # — head is dominant, the band reads as a face card rather than a
+    # wide shot of the streamer's whole setup.
+    crop_h_target = face_px_h * 1.8
+    crop_w_target = crop_h_target * target_aspect
 
-    # Snap to the cam band's aspect ratio.
-    if crop_w_target / max(crop_h_target, 1.0) < target_aspect:
-        crop_w_target = crop_h_target * target_aspect
-    else:
+    # Guarantee at least 1.3× face width so the head has horizontal
+    # breathing room even when the face is very tall-and-narrow.
+    min_w = face_px_w * 1.3
+    if crop_w_target < min_w:
+        crop_w_target = min_w
         crop_h_target = crop_w_target / target_aspect
 
     # Clamp to source — at the source bounds, snap dims so aspect stays
@@ -641,11 +643,10 @@ def _cam_crop_box(
         crop_w_target = src_w
         crop_h_target = crop_w_target / target_aspect
 
-    # Centre on face but bias the crop downward by ~40% of face height
-    # so the chest fits — without this the streamer floats at the
-    # vertical midpoint of the band with their forehead nearly touching
-    # the top edge.
-    cy = face_px_y + face_px_h * 0.4
+    # Slight downward bias keeps the chin in-frame instead of cutting
+    # at the lips. 20% of face height is light enough that eyes still
+    # sit in the upper-middle of the band where the eye naturally goes.
+    cy = face_px_y + face_px_h * 0.2
 
     crop_w_i = max(2, int(round(crop_w_target)))
     crop_h_i = max(2, int(round(crop_h_target)))
