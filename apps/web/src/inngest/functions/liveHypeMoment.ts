@@ -91,7 +91,8 @@ export const liveHypeMoment = inngest.createFunction(
         source_creator_profile_id: channel.owner_id,
         clipper_profile_id: channel.owner_id,
         video_r2_key: stitched.sourceR2Key,
-        duration_seconds: stitched.durationSec,
+        // clips.duration_seconds is an integer column.
+        duration_seconds: Math.round(stitched.durationSec),
         title: `Live clip from @${channelLogin ?? "unknown"} — ${new Date(
           detectedAt,
         )

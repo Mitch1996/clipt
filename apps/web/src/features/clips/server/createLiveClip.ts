@@ -116,7 +116,9 @@ export async function createLiveClip(
     source_creator_profile_id: channel.owner_id,
     clipper_profile_id: user.id,
     video_r2_key: stitched.sourceR2Key,
-    duration_seconds: stitched.durationSec,
+    // clips.duration_seconds is an integer column; ffprobe gives us
+    // sub-second precision we don't need.
+    duration_seconds: Math.round(stitched.durationSec),
     title: `Live clip from @${channel.platform_username ?? input.channelLogin}`,
   });
   if (insertErr) {
