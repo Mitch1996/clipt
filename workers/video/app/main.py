@@ -15,7 +15,13 @@ import logging
 from fastapi import Depends, FastAPI
 
 from .auth import verify_bearer
-from .jobs import detect_face_cam, download_youtube, reframe, transcribe
+from .jobs import (
+    classify_vtuber,
+    detect_face_cam,
+    download_youtube,
+    reframe,
+    transcribe,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -52,3 +58,4 @@ def download_youtube_route(
 
 
 app.include_router(detect_face_cam.router)
+app.include_router(classify_vtuber.router)

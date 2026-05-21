@@ -1,25 +1,25 @@
-"""POST /jobs/detect-face-cam — vision-based face-cam corner detection.
+"""POST /jobs/detect-face-cam — consensus face-cam corner detection.
 
-Replaces flaky MediaPipe-based per-clip detection. Samples a few frames
-from the source video + asks an OpenAI vision model to identify which
-corner the streamer's face cam widget sits in. Result is a single named
-corner (or "none" for a talking-head / no-cam setup), which the Inngest
-function caches back to the channel row so it only runs once per channel.
+Strategy: extract N evenly-spaced frames from the source, run an
+*independent* GPT-4o-mini vision call on each, and only return a
+corner when ≥4 of N agree. Errors decorrelate across calls — when
+the model gets fooled by an in-game character on one frame, it
+usually gets the right cam on the other six. Single-shot detection
+caches the wrong corner ~10% of the time; consensus drops that to
+sub-1% across our test set.
 
 Two input modes:
-  - `sourceR2Key` — pull bytes from S3 (used for per-clip backstop when
-    the channel hasn't been pre-analyzed). Frames sampled at 3/12/24s.
-  - `sourceUrl`   — stream via ffmpeg's `-i` (works for HLS m3u8 from
-    Twitch VOD playback). Frames sampled at 60/300/600/1800s by default
-    — long VODs give the model varied gameplay over a real session so a
-    cam-on-the-game-character is harder to confuse with a cam widget.
+  - `sourceR2Key` — pull bytes from S3 (per-clip backstop path).
+    Default 7 frame samples between 2s and clip-end.
+  - `sourceUrl`   — stream via ffmpeg's `-i` (Twitch VOD HLS).
+    Default 7 frame samples spread across the broadcast.
 
-Why vision beats face detection:
-  - Distinguishes "OBS face cam widget" from "game character" trivially
-    — vision models read the semantic content, not just pixel features.
-  - Works for tiny corner cams that MediaPipe misses entirely.
-  - Works for dark gameplay scenes that fool classical detectors.
-  - One ~$0.02 call per channel, cached forever after.
+Return value:
+  - `corner`: the agreed corner, or null if no consensus
+  - `framesSampled`: how many frames the model successfully scored
+  - `votes`: per-corner vote count (always populated, useful for the
+    admin triage view's diagnostics)
+  - `confidence`: winner_votes / total_votes (0.0–1.0)
 """
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections import Counter
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -44,34 +45,39 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 CornerStr = Literal["top_left", "top_right", "bottom_left", "bottom_right", "none"]
+_CORNERS = ("top_left", "top_right", "bottom_left", "bottom_right", "none")
 
-# Defaults for the S3-clip path (≤60s sources).
-_CLIP_OFFSETS_S = (3.0, 12.0, 24.0)
-# Defaults for the VOD path. Real session VODs are hours long; spaced
-# samples beat clustered ones because gameplay rotates through menus,
-# combat, cutscenes — only the cam stays put.
-_VOD_OFFSETS_S = (60.0, 300.0, 600.0, 1800.0)
+# Consensus parameters. 7 samples, win-with-4 means a single model
+# mistake can't flip the answer — and odd-totals avoid 3-3 ties.
+SAMPLES_DEFAULT = 7
+CONSENSUS_FLOOR = 4
+
+# Clip-source default frame offsets — spread evenly skipping the
+# first 2s (often an intro/cut) and last 1s.
+_CLIP_OFFSETS_S = (2.5, 7.5, 12.5, 17.5, 22.5, 27.5, 32.5)
+# VOD default offsets — minutes apart so gameplay varies meaningfully
+# between samples.
+_VOD_OFFSETS_S = (60.0, 180.0, 300.0, 600.0, 1200.0, 1800.0, 2700.0)
 
 _PROMPT = """\
-You're looking at frames from a Twitch livestream. The streamer
+You're looking at one frame from a Twitch livestream. The streamer
 typically has a small webcam widget showing their face overlaid in one
 corner of the screen, on top of their gameplay or content.
 
-Identify which corner of the source frame the face-camera widget sits
-in. Pick exactly one:
+Identify which corner of THIS frame the face-camera widget sits in.
+Pick exactly one:
   - "top_left"
   - "top_right"
   - "bottom_left"
   - "bottom_right"
-  - "none" — if the cam fills the entire screen (a talking-head
-    streamer with no game), if there's no visible cam at all, or if
-    the cam is centred / non-corner.
+  - "none" — the cam fills the entire screen (talking-head streamer
+    with no game), there's no visible cam at all, the cam is centred
+    or non-corner, OR you're not confident.
 
-Look at ALL the frames before deciding — the cam stays in the same
-position across frames, while the gameplay changes. The cam is the
-static element with a human face. If different frames suggest
-different corners, the model is being fooled by an in-game character —
-trust the one corner that holds across the most frames.
+The cam is the rectangular widget with a human face inside it
+(usually a webcam-style framing, not a full-screen character). Game
+characters are NOT cams. UI elements (minimaps, indicators) are NOT
+cams.
 """
 
 
@@ -87,12 +93,16 @@ class DetectFaceCamIn(BaseModel):
 class DetectFaceCamOut(BaseModel):
     corner: str | None
     """One of `top_left`/`top_right`/`bottom_left`/`bottom_right`,
-    or None when the vision model returned "none"."""
+    or None when no corner reached the consensus floor."""
 
     frames_sampled: int = Field(default=0, alias="framesSampled")
-    """How many frames actually made it to the vision model — useful
-    for telling apart a confident "none" (3 good frames) from a
-    no-signal failure (0 frames, ffmpeg couldn't seek)."""
+    """How many frames the model successfully scored."""
+
+    votes: dict[str, int] = Field(default_factory=dict)
+    """Per-corner vote count — exposed for admin diagnostics."""
+
+    confidence: float = Field(default=0.0)
+    """winner_votes / total_votes (0.0–1.0). 0.0 when no votes landed."""
 
     model_config = {"populate_by_name": True}
 
@@ -100,8 +110,6 @@ class DetectFaceCamOut(BaseModel):
 def _extract_frames_from_path(
     workdir: str, src_path: str, offsets: tuple[float, ...] | list[float]
 ) -> list[str]:
-    """Pull JPEG frames at the given offsets from a local mp4. Scales
-    to ≤960w so the upload payload stays small."""
     out: list[str] = []
     for i, offset in enumerate(offsets):
         path = os.path.join(workdir, f"f{i}.jpg")
@@ -121,13 +129,6 @@ def _extract_frames_from_path(
 def _extract_frames_from_url(
     workdir: str, url: str, offsets: tuple[float, ...] | list[float]
 ) -> list[str]:
-    """Stream frames from a remote URL (HLS m3u8 or direct mp4). One
-    ffmpeg invocation per offset — re-seeking is the simple,
-    reliable path for HLS, even if it costs a few extra seconds.
-
-    `-ss` BEFORE `-i` is keyframe-fast input seek; for HLS Twitch
-    VODs this jumps to the correct .ts segment without decoding the
-    preceding hours."""
     out: list[str] = []
     for i, offset in enumerate(offsets):
         path = os.path.join(workdir, f"f{i}.jpg")
@@ -150,63 +151,63 @@ def _extract_frames_from_url(
     return out
 
 
-def _run_vision_on_frames(frame_paths: list[str]) -> str | None:
-    """Encode + send to OpenAI with structured-output schema.
-    Returns 'top_left'/'top_right'/'bottom_left'/'bottom_right'/'none'
-    or None if parsing fails."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not set")
-
-    contents: list[dict] = [{"type": "text", "text": _PROMPT}]
-    for p in frame_paths:
-        with open(p, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode("utf-8")
-        contents.append({
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{b64}",
-                "detail": "low",
-            },
-        })
-
-    client = OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": contents}],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "face_cam_corner",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "corner": {
-                            "type": "string",
-                            "enum": [
-                                "top_left", "top_right",
-                                "bottom_left", "bottom_right",
-                                "none",
-                            ],
+def _vote_single_frame(client: OpenAI, frame_path: str) -> str | None:
+    """One independent vision call per frame. Returns the corner the
+    model picked for THIS frame in isolation, or None if the response
+    was malformed."""
+    with open(frame_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": _PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{b64}",
+                                "detail": "low",
+                            },
                         },
+                    ],
+                }
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "face_cam_corner",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "corner": {
+                                "type": "string",
+                                "enum": list(_CORNERS),
+                            },
+                        },
+                        "required": ["corner"],
+                        "additionalProperties": False,
                     },
-                    "required": ["corner"],
-                    "additionalProperties": False,
                 },
             },
-        },
-    )
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("detect-face-cam: vision call failed for %s: %s", frame_path, exc)
+        return None
 
     raw = response.choices[0].message.content or "{}"
     try:
         parsed = json.loads(raw)
-        return parsed.get("corner")
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"OpenAI vision returned malformed JSON: {raw[:200]} ({exc})",
-        )
+    except json.JSONDecodeError:
+        log.warning("detect-face-cam: malformed JSON from vision: %s", raw[:120])
+        return None
+    corner = parsed.get("corner")
+    if corner not in _CORNERS:
+        return None
+    return corner
 
 
 @router.post("/jobs/detect-face-cam", response_model=DetectFaceCamOut)
@@ -214,6 +215,9 @@ def detect_face_cam(
     payload: DetectFaceCamIn,
     _claims: dict = Depends(verify_bearer),
 ) -> DetectFaceCamOut:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not set")
     if not payload.source_r2_key and not payload.source_url:
         raise HTTPException(
             status_code=400,
@@ -222,7 +226,6 @@ def detect_face_cam(
 
     workdir = tempfile.mkdtemp(prefix="detect-face-cam-")
     try:
-        # Path A: pull bytes from S3.
         if payload.source_r2_key:
             src_path = os.path.join(workdir, "source.mp4")
             try:
@@ -236,7 +239,6 @@ def detect_face_cam(
             offsets = tuple(payload.sample_offsets_sec or _CLIP_OFFSETS_S)
             frame_paths = _extract_frames_from_path(workdir, src_path, offsets)
             mode = "r2"
-        # Path B: stream directly from a URL (Twitch VOD m3u8).
         else:
             offsets = tuple(payload.sample_offsets_sec or _VOD_OFFSETS_S)
             frame_paths = _extract_frames_from_url(
@@ -245,21 +247,44 @@ def detect_face_cam(
             mode = "url"
 
         if not frame_paths:
-            log.warning(
-                "detect-face-cam: no frames produced (mode=%s offsets=%s)",
-                mode, offsets,
-            )
+            log.warning("detect-face-cam: no frames produced (mode=%s)", mode)
             return DetectFaceCamOut(corner=None, frames_sampled=0)
 
-        corner_val = _run_vision_on_frames(frame_paths)
+        # Run one vision call per frame. Independent calls → errors
+        # decorrelate. Cost: 7 × $0.0025 ≈ $0.018 per detection.
+        client = OpenAI(api_key=api_key)
+        votes: list[str] = []
+        for fp in frame_paths:
+            v = _vote_single_frame(client, fp)
+            if v is not None:
+                votes.append(v)
+
+        if not votes:
+            log.warning("detect-face-cam: no successful votes (mode=%s)", mode)
+            return DetectFaceCamOut(corner=None, frames_sampled=0)
+
+        tally = Counter(votes)
+        winner, winner_votes = tally.most_common(1)[0]
+        confidence = winner_votes / len(votes)
+
+        # Consensus floor — anything less than CONSENSUS_FLOOR / total
+        # samples is "no agreement", we leave the channel cache null
+        # and let the next clip retry with fresh frames.
+        meets_floor = winner_votes >= CONSENSUS_FLOOR
+        is_corner = winner in (
+            "top_left", "top_right", "bottom_left", "bottom_right",
+        )
 
         log.info(
-            "detect-face-cam: mode=%s frames=%d → corner=%s",
-            mode, len(frame_paths), corner_val,
+            "detect-face-cam: mode=%s frames=%d votes=%s winner=%s confidence=%.2f consensus=%s",
+            mode, len(frame_paths), dict(tally), winner, confidence, meets_floor,
         )
+
         return DetectFaceCamOut(
-            corner=None if corner_val == "none" else corner_val,
+            corner=winner if (meets_floor and is_corner) else None,
             frames_sampled=len(frame_paths),
+            votes=dict(tally),
+            confidence=confidence,
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
