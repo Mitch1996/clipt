@@ -1,5 +1,6 @@
 "use server";
 
+import { ChannelAdded, inngest } from "@/inngest/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -188,6 +189,24 @@ export async function addWatchOnlyChannel(
     .single();
   if (error || !inserted) {
     return { ok: false, error: error?.message ?? "Insert failed" };
+  }
+
+  // Fire-and-forget: pre-detect the face-cam corner from the
+  // streamer's latest VOD so the very first clip uses the locked
+  // region instead of running per-clip detection. Caught + logged
+  // rather than failing the add — detection is a nice-to-have.
+  try {
+    await inngest.send({
+      name: ChannelAdded.name,
+      data: {
+        channelId: inserted.id,
+        platform: "twitch",
+        platformUserId: twitchUser.id,
+        platformLogin: twitchUser.login,
+      },
+    });
+  } catch (exc) {
+    console.warn("inngest channel/added send failed:", exc);
   }
 
   return {

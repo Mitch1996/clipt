@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 import {
+  redetectFaceCamCorner,
   setFaceCamCorner,
   type FaceCamCorner,
 } from "../server/setFaceCamCorner";
@@ -47,6 +48,26 @@ export function FaceCamCornerPicker({
     router.refresh();
   }
 
+  async function redetect() {
+    if (pending) return;
+    setPending(true);
+    const result = await redetectFaceCamCorner(channelId);
+    setPending(false);
+    if (!result.ok) {
+      toast({
+        title: "Couldn't re-detect",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "Re-detecting…",
+      description: "Reading the latest VOD now. Refresh in ~30s.",
+    });
+    router.refresh();
+  }
+
   return (
     <div className="space-y-2">
       <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
@@ -68,6 +89,17 @@ export function FaceCamCornerPicker({
           ? `Crops a fixed rectangle in the ${current.replace("_", " ")}.`
           : "Auto-detects from the first few seconds of each clip."}
       </p>
+      <button
+        type="button"
+        onClick={redetect}
+        disabled={pending}
+        className={cn(
+          "rounded border border-border bg-card px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground",
+          pending && "cursor-not-allowed opacity-60",
+        )}
+      >
+        Re-detect from VOD
+      </button>
     </div>
   );
 }

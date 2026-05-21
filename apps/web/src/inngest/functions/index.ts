@@ -1,3 +1,4 @@
+import { detectChannelCorner } from "./detectChannelCorner";
 import { liveHypeMoment } from "./liveHypeMoment";
 import { processCaptionEdit } from "./processCaptionEdit";
 import { processClip } from "./processClip";
@@ -15,4 +16,5 @@ export const functions = [
   publishScheduledPost,
   syncPostStats,
   liveHypeMoment,
+  detectChannelCorner,
 ];

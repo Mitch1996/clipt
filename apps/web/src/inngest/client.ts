@@ -43,6 +43,25 @@ export const PublishScheduled = eventType("publish/scheduled", {
  * pipeline — for now it just logs so we can verify the event flow
  * end-to-end.
  */
+/**
+ * Fired the moment a channels row is created (either via watch-only
+ * admin add or via a streamer's own Twitch OAuth connect). The
+ * handler `detectChannelCorner` resolves the streamer's latest
+ * Twitch VOD HLS playlist and asks gpt-4o-mini which corner the cam
+ * widget sits in — so by the time the first clip ever runs through
+ * the pipeline, channels.face_cam_corner is already filled in and
+ * reframe.py uses the locked region instantly. This is the OpusClip
+ * "auto-detect, no user setup" experience.
+ */
+export const ChannelAdded = eventType("channel/added", {
+  schema: staticSchema<{
+    channelId: string;
+    platform: "twitch" | "youtube" | "kick";
+    platformUserId: string;
+    platformLogin: string;
+  }>(),
+});
+
 export const ClipHypeMoment = eventType("clip/hype-moment", {
   schema: staticSchema<{
     channelId: string;

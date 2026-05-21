@@ -137,10 +137,18 @@ export const callReframe = (input: ReframeIn) =>
   callWorker<ReframeIn, ReframeOut>("/jobs/reframe", input);
 
 export interface DetectFaceCamIn {
-  sourceR2Key: string;
+  /** Stored source mp4 in S3. Frames sampled at 3/12/24s by default. */
+  sourceR2Key?: string;
+  /** Direct URL (HLS m3u8 from a Twitch VOD, or a plain mp4). Frames
+   * sampled at 60/300/600/1800s by default — long VODs give the
+   * vision model varied gameplay over a real session. */
+  sourceUrl?: string;
+  /** Override frame offsets if the defaults don't suit the source. */
+  sampleOffsetsSec?: number[];
 }
 export interface DetectFaceCamOut {
   corner: "top_left" | "top_right" | "bottom_left" | "bottom_right" | null;
+  framesSampled?: number;
 }
 export const callDetectFaceCam = (input: DetectFaceCamIn) =>
   callWorker<DetectFaceCamIn, DetectFaceCamOut>("/jobs/detect-face-cam", input);

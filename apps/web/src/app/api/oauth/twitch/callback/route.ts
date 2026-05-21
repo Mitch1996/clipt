@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { ChannelAdded, inngest } from "@/inngest/client";
 import { encrypt } from "@/lib/crypto/encryption";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
 
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-  const { error: upsertErr } = await supabase
+  const { data: upserted, error: upsertErr } = await supabase
     .from("channels")
     .upsert(
       {
@@ -90,11 +91,33 @@ export async function GET(request: NextRequest) {
         last_synced_at: new Date().toISOString(),
       },
       { onConflict: "platform,platform_user_id" },
-    );
+    )
+    .select("id")
+    .single();
 
   if (upsertErr) {
     console.error("channels upsert failed:", upsertErr);
     return back(origin, "error", "db_upsert_failed");
+  }
+
+  // Fire channel/added so the detectChannelCorner Inngest function
+  // pre-fills `face_cam_corner` from the streamer's latest VOD. Best-
+  // effort; if Inngest is unreachable, we still complete the connect
+  // and per-clip detection picks up the slack.
+  if (upserted?.id) {
+    try {
+      await inngest.send({
+        name: ChannelAdded.name,
+        data: {
+          channelId: upserted.id,
+          platform: "twitch",
+          platformUserId: twitchUser.id,
+          platformLogin: twitchUser.login,
+        },
+      });
+    } catch (exc) {
+      console.warn("inngest channel/added send failed:", exc);
+    }
   }
 
   // 7. Clear the state cookie and redirect.
