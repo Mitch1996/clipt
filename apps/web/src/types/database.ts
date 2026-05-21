@@ -63,8 +63,10 @@ export type Database = {
           connected_at: string
           created_at: string
           face_cam_corner: string | null
+          face_cam_corner_confidence: number | null
           id: string
           is_live: boolean
+          is_vtuber: boolean | null
           last_live_at: string | null
           last_live_check: string | null
           last_synced_at: string | null
@@ -82,8 +84,10 @@ export type Database = {
           connected_at?: string
           created_at?: string
           face_cam_corner?: string | null
+          face_cam_corner_confidence?: number | null
           id?: string
           is_live?: boolean
+          is_vtuber?: boolean | null
           last_live_at?: string | null
           last_live_check?: string | null
           last_synced_at?: string | null
@@ -101,8 +105,10 @@ export type Database = {
           connected_at?: string
           created_at?: string
           face_cam_corner?: string | null
+          face_cam_corner_confidence?: number | null
           id?: string
           is_live?: boolean
+          is_vtuber?: boolean | null
           last_live_at?: string | null
           last_live_check?: string | null
           last_synced_at?: string | null
@@ -194,6 +200,8 @@ export type Database = {
           deleted_at: string | null
           duration_seconds: number | null
           earnings_cents: number
+          face_cam_corner: string | null
+          face_cam_corner_source: string | null
           id: string
           processing_error: string | null
           processing_step: string | null
@@ -208,6 +216,8 @@ export type Database = {
           status: string
           title: string | null
           updated_at: string
+          verification_attempts: number
+          verification_status: string
           vertical_video_r2_key: string | null
           video_r2_key: string | null
           view_count_total: number
@@ -221,6 +231,8 @@ export type Database = {
           deleted_at?: string | null
           duration_seconds?: number | null
           earnings_cents?: number
+          face_cam_corner?: string | null
+          face_cam_corner_source?: string | null
           id?: string
           processing_error?: string | null
           processing_step?: string | null
@@ -235,6 +247,8 @@ export type Database = {
           status?: string
           title?: string | null
           updated_at?: string
+          verification_attempts?: number
+          verification_status?: string
           vertical_video_r2_key?: string | null
           video_r2_key?: string | null
           view_count_total?: number
@@ -248,6 +262,8 @@ export type Database = {
           deleted_at?: string | null
           duration_seconds?: number | null
           earnings_cents?: number
+          face_cam_corner?: string | null
+          face_cam_corner_source?: string | null
           id?: string
           processing_error?: string | null
           processing_step?: string | null
@@ -262,6 +278,8 @@ export type Database = {
           status?: string
           title?: string | null
           updated_at?: string
+          verification_attempts?: number
+          verification_status?: string
           vertical_video_r2_key?: string | null
           video_r2_key?: string | null
           view_count_total?: number
