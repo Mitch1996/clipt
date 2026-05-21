@@ -3,6 +3,7 @@ import { liveHypeMoment } from "./liveHypeMoment";
 import { processCaptionEdit } from "./processCaptionEdit";
 import { processClip } from "./processClip";
 import { publishScheduledPost } from "./publishScheduledPost";
+import { selfHealCorner } from "./selfHealCorner";
 import { syncPostStats } from "./syncPostStats";
 
 /**
@@ -17,4 +18,5 @@ export const functions = [
   syncPostStats,
   liveHypeMoment,
   detectChannelCorner,
+  selfHealCorner,
 ];

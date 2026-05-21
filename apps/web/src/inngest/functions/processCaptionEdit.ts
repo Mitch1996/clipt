@@ -3,23 +3,29 @@ import { NonRetriableError } from "inngest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { callDetectFaceCam, callReframe } from "@/lib/workers/videoWorker";
 
-import { ClipCaptionsUpdated, inngest } from "../client";
+import {
+  ClipCaptionsUpdated,
+  CornerVerificationFailed,
+  inngest,
+} from "../client";
 
 /**
- * processCaptionEdit — re-renders the vertical mp4 with edited captions.
+ * processCaptionEdit — re-renders the vertical mp4.
  *
- * Triggered by `clip/captions-updated` after the editor saves new
- * caption text. We skip transcription (the segments come straight from
- * the editor) and reuse the existing attribution JWT from the row, so
- * the cut-window and signing identity stay stable across edits.
+ * Despite the name, this is the canonical re-render path. Triggered by:
+ *   - the editor saving new caption text
+ *   - the self-heal loop after corner invalidation
+ *   - the channel/added flow after a corner-cache update
  *
- * Flow:
- *   1. Load the clip + captions + attribution + source-creator handle
- *   2. Mark `processing` (UI shows skeleton over the preview)
- *   3. Call worker reframe with the new captions key
- *   4. Persist updated vertical R2 key (usually the same key, overwritten)
- *   5. Mark `ready`
+ * Each run reads channels.face_cam_corner + channels.is_vtuber fresh,
+ * re-renders with the latest state, runs the same in-worker
+ * post-render verification, and either marks ready (passed) or kicks
+ * the self-heal loop again (failed). Circuit breaker on
+ * clips.verification_attempts caps how many cycles a single clip can
+ * trigger.
  */
+const CIRCUIT_BREAKER_MAX_ATTEMPTS = 2;
+
 export const processCaptionEdit = inngest.createFunction(
   {
     id: "process-caption-edit",
@@ -34,7 +40,7 @@ export const processCaptionEdit = inngest.createFunction(
       const { data, error } = await supabase
         .from("clips")
         .select(
-          "id, video_r2_key, attribution_signature, source_creator_profile_id, source_channel_id",
+          "id, video_r2_key, attribution_signature, source_creator_profile_id, source_channel_id, verification_attempts, face_cam_corner",
         )
         .eq("id", clipId)
         .maybeSingle();
@@ -43,16 +49,34 @@ export const processCaptionEdit = inngest.createFunction(
       }
       if (!data.video_r2_key) {
         throw new NonRetriableError(
-          `clip ${clipId} has no source video — caption edit not applicable`,
+          `clip ${clipId} has no source video — re-render not applicable`,
         );
       }
       return data;
     });
 
-    // Resolve handle for the burned-in badge — same lookup process-clip
-    // does on the original render. step.run results round-trip through
-    // JSON, so we return `null` (not `undefined`, which JSON drops)
-    // and narrow at the call site.
+    // Circuit breaker. If this clip has already burned through its
+    // re-render budget, give up — mark verification_status='failed' for
+    // admin triage and DON'T loop again.
+    if (clip.verification_attempts >= CIRCUIT_BREAKER_MAX_ATTEMPTS) {
+      await step.run("mark-circuit-tripped", async () => {
+        await supabase
+          .from("clips")
+          .update({
+            status: "ready", // surface the (wrong) render rather than leaving the clip in limbo
+            verification_status: "failed",
+            processing_step: null,
+            processing_error: `Self-heal circuit breaker tripped after ${CIRCUIT_BREAKER_MAX_ATTEMPTS} attempts. Admin triage required.`,
+          })
+          .eq("id", clipId);
+      });
+      return {
+        clipId,
+        status: "circuit-tripped",
+        attempts: clip.verification_attempts,
+      };
+    }
+
     const creatorHandle: string | null = await step.run(
       "load-creator-handle",
       async () => {
@@ -78,33 +102,50 @@ export const processCaptionEdit = inngest.createFunction(
       if (error) throw error;
     });
 
-    let faceCamCorner = await step.run("load-face-cam-corner", async () => {
-      if (!clip.source_channel_id) return null;
+    // Fresh read of channel state — this is what makes the self-heal
+    // loop work. After CornerVerificationFailed nulls the cached
+    // corner and re-runs detection, subsequent re-renders see the new
+    // value here.
+    const channelState = await step.run("load-channel-state", async () => {
+      if (!clip.source_channel_id) return { corner: null, isVtuber: null };
       const { data } = await supabase
         .from("channels")
-        .select("face_cam_corner")
+        .select("face_cam_corner, is_vtuber")
         .eq("id", clip.source_channel_id)
         .maybeSingle();
-      return data?.face_cam_corner ?? null;
+      return {
+        corner: data?.face_cam_corner ?? null,
+        isVtuber: data?.is_vtuber ?? null,
+      };
     });
+    let faceCamCorner = channelState.corner;
+    let cornerSource: "vision" | "vod_predetect" | "reverify" | null =
+      faceCamCorner ? "reverify" : null;
     if (!faceCamCorner && clip.source_channel_id) {
       const detected = await step.run("detect-face-cam-vision", async () => {
         try {
           const res = await callDetectFaceCam({
             sourceR2Key: clip.video_r2_key!,
           });
-          return res.corner ?? null;
+          return {
+            corner: res.corner ?? null,
+            confidence: res.confidence ?? 0,
+          };
         } catch (err) {
           console.warn("detect-face-cam failed:", err);
-          return null;
+          return { corner: null, confidence: 0 };
         }
       });
-      if (detected) {
-        faceCamCorner = detected;
+      if (detected.corner) {
+        faceCamCorner = detected.corner;
+        cornerSource = "vision";
         await step.run("cache-vision-corner", async () => {
           await supabase
             .from("channels")
-            .update({ face_cam_corner: detected })
+            .update({
+              face_cam_corner: detected.corner,
+              face_cam_corner_confidence: detected.confidence,
+            })
             .eq("id", clip.source_channel_id!)
             .is("face_cam_corner", null);
         });
@@ -122,16 +163,18 @@ export const processCaptionEdit = inngest.createFunction(
         faceCamCorner: (faceCamCorner ?? undefined) as
           | "top_left" | "top_right" | "bottom_left" | "bottom_right"
           | undefined,
+        isVtuber: channelState.isVtuber ?? undefined,
       }),
     );
 
-    // Cache auto-detected corner back to the channel if not overridden.
     if (
       clip.source_channel_id &&
       !faceCamCorner &&
       reframed.detectedCorner
     ) {
-      await step.run("cache-face-cam-corner", async () => {
+      faceCamCorner = reframed.detectedCorner;
+      cornerSource = "vision";
+      await step.run("cache-fallback-corner", async () => {
         await supabase
           .from("channels")
           .update({ face_cam_corner: reframed.detectedCorner })
@@ -143,10 +186,37 @@ export const processCaptionEdit = inngest.createFunction(
     await step.run("persist-vertical", async () => {
       const { error } = await supabase
         .from("clips")
-        .update({ vertical_video_r2_key: reframed.verticalR2Key })
+        .update({
+          vertical_video_r2_key: reframed.verticalR2Key,
+          face_cam_corner: faceCamCorner,
+          face_cam_corner_source: cornerSource,
+          verification_status: reframed.verificationStatus ?? "skipped",
+          verification_attempts: clip.verification_attempts + 1,
+        })
         .eq("id", clipId);
       if (error) throw error;
     });
+
+    if (reframed.verificationStatus === "failed") {
+      console.warn(
+        `clip ${clipId} re-render verification failed (attempt ${clip.verification_attempts + 1}): ${reframed.verificationDetail ?? "?"}`,
+      );
+      await step.run("fire-self-heal", async () => {
+        await inngest.send({
+          name: CornerVerificationFailed.name,
+          data: {
+            clipId,
+            channelId: clip.source_channel_id,
+            invalidatedCorner: faceCamCorner,
+          },
+        });
+      });
+      return {
+        clipId,
+        status: "self-heal-queued",
+        attempts: clip.verification_attempts + 1,
+      };
+    }
 
     await step.run("mark-ready", async () => {
       const { error } = await supabase

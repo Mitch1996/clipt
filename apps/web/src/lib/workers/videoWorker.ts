@@ -118,20 +118,27 @@ export interface ReframeIn {
   style?: "default" | string;
   attributionToken?: string;
   creatorHandle?: string;
-  /** Streamer-set override for the OBS face-cam position. */
-  faceCamCorner?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+  /** Channel-level cached corner passed straight through from
+   *  channels.face_cam_corner. */
+  faceCamCorner?: FaceCamCorner;
+  /** Whether the streamer uses a VTuber avatar. Drives which
+   *  post-render verification path runs. */
+  isVtuber?: boolean;
 }
 export interface ReframeOut {
   verticalR2Key: string;
   thumbnailR2Key: string;
   width: number;
   height: number;
-  /** Which corner the auto-detector locked onto for this clip, or
-   * null when no corner cluster won (centred talking-head, or
-   * detection didn't find anything reliable). Callers should cache
-   * this back to channels.face_cam_corner so subsequent clips for
-   * the same channel skip detection and use the same preset. */
-  detectedCorner?: "top_left" | "top_right" | "bottom_left" | "bottom_right" | null;
+  /** Which corner the worker's internal fallback locked onto for this
+   *  clip (only set when faceCamCorner was NOT supplied). */
+  detectedCorner?: FaceCamCorner | null;
+  /** Post-render verification result. Drives whether processClip /
+   *  processCaptionEdit marks the clip ready or kicks the self-heal
+   *  loop. */
+  verificationStatus?: "passed" | "failed" | "skipped";
+  /** Short reason string surfaced in admin triage. */
+  verificationDetail?: string | null;
 }
 export const callReframe = (input: ReframeIn) =>
   callWorker<ReframeIn, ReframeOut>("/jobs/reframe", input);

@@ -62,6 +62,30 @@ export const ChannelAdded = eventType("channel/added", {
   }>(),
 });
 
+/**
+ * Fired by processClip / processCaptionEdit when post-render
+ * verification declares the rendered cam band is gameplay (not a face
+ * cam or VTuber overlay). The handler `selfHealCorner` nulls the
+ * channel's cached corner, re-runs consensus detection, then fans out
+ * re-render events for every clip on this channel that was rendered
+ * with the now-invalidated corner — capped at 30 days back and 2
+ * attempts per clip (circuit breaker).
+ */
+export const CornerVerificationFailed = eventType(
+  "corner/verification-failed",
+  {
+    schema: staticSchema<{
+      clipId: string;
+      channelId: string | null;
+      /** The corner that produced the wrong render. The self-heal
+       *  loop invalidates and re-renders clips that share this
+       *  corner. null when verification failed without a corner being
+       *  set (worker fallback). */
+      invalidatedCorner: string | null;
+    }>(),
+  },
+);
+
 export const ClipHypeMoment = eventType("clip/hype-moment", {
   schema: staticSchema<{
     channelId: string;

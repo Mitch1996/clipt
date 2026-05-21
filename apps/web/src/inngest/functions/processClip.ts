@@ -13,7 +13,7 @@ import {
   callTranscribe,
 } from "@/lib/workers/videoWorker";
 
-import { ClipRequested, inngest } from "../client";
+import { ClipRequested, CornerVerificationFailed, inngest } from "../client";
 
 /**
  * processClip — the canonical clip-production pipeline.
@@ -264,43 +264,50 @@ export const processClip = inngest.createFunction(
       if (error) throw error;
     });
 
-    // Channel-set face-cam corner override. Three-stage resolution:
-    //   1. If channels.face_cam_corner is set (either by streamer pick
-    //      or by a prior vision-detection cache write), use it.
-    //   2. Otherwise call the worker's /jobs/detect-face-cam vision
-    //      endpoint — GPT-4o-mini reads 3 sample frames and reliably
-    //      identifies the cam widget vs game content. Cache the
-    //      result back to the channel so we only ever do this once
-    //      per channel.
-    //   3. Worker's own corner-cluster fallback runs only if both of
-    //      the above produced nothing (transient detect failure).
-    let faceCamCorner = await step.run("load-face-cam-corner", async () => {
-      if (!resolved.channelId) return null;
+    // Channel-level corner + VTuber classification — see channel/added
+    // (detectChannelCorner) for the pre-detect path that populates
+    // these. If either is null at this point we fall through to the
+    // per-clip consensus detect on the actual source video.
+    const channelState = await step.run("load-channel-state", async () => {
+      if (!resolved.channelId) return { corner: null, isVtuber: null };
       const { data } = await supabase
         .from("channels")
-        .select("face_cam_corner")
+        .select("face_cam_corner, is_vtuber")
         .eq("id", resolved.channelId)
         .maybeSingle();
-      return data?.face_cam_corner ?? null;
+      return {
+        corner: data?.face_cam_corner ?? null,
+        isVtuber: data?.is_vtuber ?? null,
+      };
     });
+    let faceCamCorner = channelState.corner;
+    let cornerSource: "vision" | "vod_predetect" | "reverify" | null =
+      faceCamCorner ? "vod_predetect" : null;
     if (!faceCamCorner && resolved.channelId) {
       const detected = await step.run("detect-face-cam-vision", async () => {
         try {
           const res = await callDetectFaceCam({
             sourceR2Key: downloaded.videoR2Key,
           });
-          return res.corner ?? null;
+          return {
+            corner: res.corner ?? null,
+            confidence: res.confidence ?? 0,
+          };
         } catch (err) {
           console.warn("detect-face-cam failed:", err);
-          return null;
+          return { corner: null, confidence: 0 };
         }
       });
-      if (detected) {
-        faceCamCorner = detected;
+      if (detected.corner) {
+        faceCamCorner = detected.corner;
+        cornerSource = "vision";
         await step.run("cache-vision-corner", async () => {
           await supabase
             .from("channels")
-            .update({ face_cam_corner: detected })
+            .update({
+              face_cam_corner: detected.corner,
+              face_cam_corner_confidence: detected.confidence,
+            })
             .eq("id", resolved.channelId!)
             .is("face_cam_corner", null);
         });
@@ -318,37 +325,66 @@ export const processClip = inngest.createFunction(
         faceCamCorner: (faceCamCorner ?? undefined) as
           | "top_left" | "top_right" | "bottom_left" | "bottom_right"
           | undefined,
+        isVtuber: channelState.isVtuber ?? undefined,
       }),
     );
 
-    // Cache the auto-detected cam corner back to the channel if we
-    // don't already have one stored. Face cams are fixed in OBS, so
-    // the first successful detection should win for every subsequent
-    // clip on the same channel — eliminates the "detection wobble"
-    // where two clips a minute apart pick different regions.
     if (
       resolved.channelId &&
       !faceCamCorner &&
       reframed.detectedCorner
     ) {
-      await step.run("cache-face-cam-corner", async () => {
+      faceCamCorner = reframed.detectedCorner;
+      cornerSource = "vision";
+      await step.run("cache-fallback-corner", async () => {
         await supabase
           .from("channels")
           .update({ face_cam_corner: reframed.detectedCorner })
           .eq("id", resolved.channelId!)
-          .is("face_cam_corner", null); // never overwrite a manual override
+          .is("face_cam_corner", null);
       });
     }
 
+    // Persist what got baked into THIS clip's mp4. The self-heal loop
+    // reads (face_cam_corner, verification_status) to decide which
+    // clips to invalidate when a corner gets falsified.
     await step.run("persist-reframe-meta", async () => {
       const { error } = await supabase
         .from("clips")
         .update({
           vertical_video_r2_key: reframed.verticalR2Key,
+          face_cam_corner: faceCamCorner,
+          face_cam_corner_source: cornerSource,
+          verification_status: reframed.verificationStatus ?? "skipped",
         })
         .eq("id", clipId);
       if (error) throw error;
     });
+
+    // If post-render verification failed, kick the self-heal loop
+    // instead of marking ready. The clip stays in 'processing' until
+    // the re-render lands.
+    if (reframed.verificationStatus === "failed") {
+      console.warn(
+        `clip ${clipId} verification failed: ${reframed.verificationDetail ?? "?"}`,
+      );
+      await step.run("fire-self-heal", async () => {
+        await inngest.send({
+          name: CornerVerificationFailed.name,
+          data: {
+            clipId,
+            channelId: resolved.channelId,
+            invalidatedCorner: faceCamCorner,
+          },
+        });
+      });
+      return {
+        clipId,
+        status: "self-heal-queued",
+        verificationDetail: reframed.verificationDetail,
+        source_url: clip.source_url,
+      };
+    }
 
     // 8. Mark ready — clear processing_step so the UI flips off the
     //    progress label.

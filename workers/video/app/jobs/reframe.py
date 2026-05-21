@@ -151,10 +151,17 @@ class ReframeIn(BaseModel):
     attribution_token: str | None = Field(default=None, alias="attributionToken")
     # Drives the @handle pill in the top-right.
     creator_handle: str | None = Field(default=None, alias="creatorHandle")
-    # Streamer override for the face-cam location when auto-detection
-    # fails. One of "top_left" | "top_right" | "bottom_left" |
-    # "bottom_right" | None (auto).
+    # The channel-level corner the caller wants us to crop. Passed
+    # straight through from channels.face_cam_corner. None = run the
+    # MediaPipe corner-cluster fallback that this worker has used since
+    # day one. Self-correction loop sets this explicitly per-clip.
     face_cam_corner: str | None = Field(default=None, alias="faceCamCorner")
+    # Whether the streamer uses an animated avatar (Live2D/VRoid/etc.)
+    # instead of a real face cam. Drives which post-render verification
+    # path runs:
+    #   - False / None → MediaPipe face-detection on the rendered cam band
+    #   - True         → second vision call asking "overlay or gameplay?"
+    is_vtuber: bool | None = Field(default=None, alias="isVtuber")
 
     model_config = {"populate_by_name": True}
 
@@ -165,11 +172,18 @@ class ReframeOut(BaseModel):
     width: int = TARGET_W
     height: int = TARGET_H
     # Corner we ended up using for the cam crop. Lets the Next side
-    # cache the result back to `channels.face_cam_corner` so subsequent
-    # clips for the same channel reuse the same region — face cams in
-    # OBS don't move between clips. None means "non-corner cluster"
-    # (centred talking-head, or auto-detection didn't pick anything).
+    # persist clips.face_cam_corner so the self-heal loop can invalidate
+    # by (channel, corner) when verification fails.
     detected_corner: str | None = Field(default=None, alias="detectedCorner")
+    # Post-render verification result. "passed"/"failed"/"skipped".
+    # processClip / processCaptionEdit reads this and either marks the
+    # clip ready (passed) or kicks the self-heal loop (failed).
+    verification_status: str = Field(default="skipped", alias="verificationStatus")
+    # Diagnostic data exposed to the admin triage view when verification
+    # fails — sampled cam-band frames + the model's reasoning.
+    verification_detail: str | None = Field(
+        default=None, alias="verificationDetail"
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -232,6 +246,21 @@ def run(payload: ReframeIn) -> ReframeOut:
 
         _extract_thumbnail(out_mp4, thumb_jpg)
 
+        # Post-render verification BEFORE upload — runs against the just-
+        # rendered mp4 to confirm the top cam band actually contains the
+        # face cam. Cheap (one frame extract + one MediaPipe / vision
+        # call). If verification fails, processClip / processCaptionEdit
+        # will kick the self-heal loop instead of marking ready.
+        ver_status, ver_detail = _verify_cam_band(
+            out_mp4=out_mp4,
+            workdir=workdir,
+            is_vtuber=bool(payload.is_vtuber),
+        )
+        log.info(
+            "reframe: verification status=%s detail=%s",
+            ver_status, ver_detail,
+        )
+
         log.info("reframe: uploading vertical + thumbnail")
         with open(out_mp4, "rb") as f:
             put_bytes(keys["vertical_mp4"], f.read(), "video/mp4")
@@ -242,6 +271,8 @@ def run(payload: ReframeIn) -> ReframeOut:
             verticalR2Key=keys["vertical_mp4"],
             thumbnailR2Key=keys["thumbnail_jpg"],
             detectedCorner=detected_corner,
+            verificationStatus=ver_status,
+            verificationDetail=ver_detail,
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -1173,3 +1204,181 @@ def _extract_thumbnail(src_mp4: str, out_jpg: str) -> None:
         res2 = subprocess.run(cmd2, capture_output=True, text=True)
         if res2.returncode != 0:
             raise RuntimeError(f"thumbnail extract failed: {res2.stderr[:300]}")
+
+
+# ─── Post-render verification ─────────────────────────────────────────
+
+
+def _extract_cam_band_frames(
+    out_mp4: str, workdir: str, offsets_s: tuple[float, ...] = (1.5, 4.0, 8.0),
+) -> list[str]:
+    """Grab the top CAM_BAND_H pixels from a few frames of the rendered
+    mp4. Crops + scales in ffmpeg so we don't need to decode + re-encode
+    in Python.
+
+    Multiple offsets so a single-frame glitch (loading screen, scene
+    transition) doesn't tank verification on its own — we accept if any
+    one frame passes."""
+    out: list[str] = []
+    for i, t in enumerate(offsets_s):
+        path = os.path.join(workdir, f"verify-{i}.jpg")
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", str(t), "-i", out_mp4,
+            "-frames:v", "1", "-q:v", "3",
+            "-vf", f"crop={TARGET_W}:{CAM_BAND_H}:0:0",
+            path,
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(path):
+            out.append(path)
+    return out
+
+
+def _mediapipe_has_face(frame_path: str) -> bool:
+    """Run our existing face-detector model on a cam-band frame.
+    Returns True if any reasonably-sized face is detected.
+
+    Reuses _ensure_face_model() + the same Blaze model the per-clip
+    face track uses, so this is essentially free in load terms."""
+    options = mp_vision.FaceDetectorOptions(
+        base_options=mp_tasks.BaseOptions(model_asset_path=_ensure_face_model()),
+        running_mode=mp_vision.RunningMode.IMAGE,
+        min_detection_confidence=_MIN_DETECTION_CONFIDENCE,
+    )
+    detector = mp_vision.FaceDetector.create_from_options(options)
+    try:
+        img = cv2.imread(frame_path)
+        if img is None:
+            return False
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = detector.detect(mp_img)
+        h, w = img.shape[:2]
+        # Filter out detections that are absurdly tiny (likely false
+        # positives on render artifacts) — same gate the track uses.
+        candidates = [
+            d for d in (result.detections or [])
+            if 0.03 < (d.bounding_box.width / max(w, 1)) < 0.95
+            and 0.03 < (d.bounding_box.height / max(h, 1)) < 0.95
+        ]
+        return len(candidates) > 0
+    finally:
+        detector.close()
+
+
+def _vision_band_is_overlay(frame_path: str) -> bool | None:
+    """For VTuber channels — MediaPipe won't fire on a Live2D avatar.
+    Ask gpt-4o-mini "is this a streamer overlay/avatar, or gameplay?"
+    Returns True when the band shows an overlay, False for gameplay,
+    None on API failure (caller decides what to do)."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        log.warning("verify: OPENAI_API_KEY not set, skipping vtuber verification")
+        return None
+
+    import base64
+    import json
+
+    with open(frame_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    prompt = (
+        "You're looking at the top portion of a vertical TikTok-style "
+        "clip. It should contain the streamer's face cam (an animated "
+        "avatar or webcam widget). Classify what this frame actually "
+        "shows:\n"
+        '  - "overlay" — the streamer\'s face cam, avatar, '
+        "or overlay widget\n"
+        '  - "gameplay" — game content, gameplay HUD, or scene that '
+        "doesn't include the streamer cam"
+    )
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{b64}",
+                                "detail": "low",
+                            },
+                        },
+                    ],
+                }
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "cam_band_classification",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": ["overlay", "gameplay"],
+                            },
+                        },
+                        "required": ["kind"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        )
+        raw = response.choices[0].message.content or "{}"
+        parsed = json.loads(raw)
+        return parsed.get("kind") == "overlay"
+    except Exception as exc:  # noqa: BLE001
+        log.warning("verify: vision band classification failed: %s", exc)
+        return None
+
+
+def _verify_cam_band(
+    *, out_mp4: str, workdir: str, is_vtuber: bool,
+) -> tuple[str, str | None]:
+    """Verify the rendered cam band actually contains a face / overlay.
+
+    Returns (status, detail). status is one of:
+      - "passed"  — band contains expected cam content
+      - "failed"  — band is gameplay / empty / wrong region
+      - "skipped" — couldn't extract frames, or VTuber path's vision
+                    API was unavailable (treat as inconclusive, don't
+                    self-heal on a flaky external call)
+
+    The verification runs against the just-rendered mp4 — DIFFERENT
+    input than the upstream detection step's source video — so errors
+    decorrelate. If detection got fooled, verification has an
+    independent shot at catching it.
+    """
+    frame_paths = _extract_cam_band_frames(out_mp4, workdir)
+    if not frame_paths:
+        return ("skipped", "no frames extracted from cam band")
+
+    if is_vtuber:
+        # Avatar streamer — MediaPipe won't fire. Use vision.
+        for fp in frame_paths:
+            result = _vision_band_is_overlay(fp)
+            if result is True:
+                return ("passed", "vtuber overlay detected")
+            if result is None:
+                # API failure on this sample, try the next one.
+                continue
+        # All non-skipped results said "gameplay".
+        if any(_vision_band_is_overlay(fp) is None for fp in frame_paths):
+            return ("skipped", "vision API unavailable on all samples")
+        return ("failed", "cam band shows gameplay across all sampled frames")
+
+    # Human face streamer — MediaPipe is the canonical check.
+    for fp in frame_paths:
+        if _mediapipe_has_face(fp):
+            return ("passed", "face detected in cam band")
+    return ("failed", "no face detected in cam band across sampled frames")
