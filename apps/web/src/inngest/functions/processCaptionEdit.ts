@@ -1,7 +1,7 @@
 import { NonRetriableError } from "inngest";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { callReframe } from "@/lib/workers/videoWorker";
+import { callDetectFaceCam, callReframe } from "@/lib/workers/videoWorker";
 
 import { ClipCaptionsUpdated, inngest } from "../client";
 
@@ -78,7 +78,7 @@ export const processCaptionEdit = inngest.createFunction(
       if (error) throw error;
     });
 
-    const faceCamCorner = await step.run("load-face-cam-corner", async () => {
+    let faceCamCorner = await step.run("load-face-cam-corner", async () => {
       if (!clip.source_channel_id) return null;
       const { data } = await supabase
         .from("channels")
@@ -87,6 +87,29 @@ export const processCaptionEdit = inngest.createFunction(
         .maybeSingle();
       return data?.face_cam_corner ?? null;
     });
+    if (!faceCamCorner && clip.source_channel_id) {
+      const detected = await step.run("detect-face-cam-vision", async () => {
+        try {
+          const res = await callDetectFaceCam({
+            sourceR2Key: clip.video_r2_key!,
+          });
+          return res.corner ?? null;
+        } catch (err) {
+          console.warn("detect-face-cam failed:", err);
+          return null;
+        }
+      });
+      if (detected) {
+        faceCamCorner = detected;
+        await step.run("cache-vision-corner", async () => {
+          await supabase
+            .from("channels")
+            .update({ face_cam_corner: detected })
+            .eq("id", clip.source_channel_id!)
+            .is("face_cam_corner", null);
+        });
+      }
+    }
 
     const reframed = await step.run("reframe", () =>
       callReframe({

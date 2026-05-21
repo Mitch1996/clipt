@@ -136,6 +136,15 @@ export interface ReframeOut {
 export const callReframe = (input: ReframeIn) =>
   callWorker<ReframeIn, ReframeOut>("/jobs/reframe", input);
 
+export interface DetectFaceCamIn {
+  sourceR2Key: string;
+}
+export interface DetectFaceCamOut {
+  corner: "top_left" | "top_right" | "bottom_left" | "bottom_right" | null;
+}
+export const callDetectFaceCam = (input: DetectFaceCamIn) =>
+  callWorker<DetectFaceCamIn, DetectFaceCamOut>("/jobs/detect-face-cam", input);
+
 export interface DownloadYouTubeIn {
   clipId: string;
   sourceUrl: string;
