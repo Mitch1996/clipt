@@ -2,9 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { Radio, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { FaceCamCornerPicker } from "@/features/channels/components/FaceCamCornerPicker";
 import { WatchChannelForm } from "@/features/channels/components/WatchChannelForm";
-import type { FaceCamCorner } from "@/features/channels/server/setFaceCamCorner";
 import {
   listWatchOnlyChannels,
   type WatchOnlyChannel,
@@ -123,12 +121,16 @@ function Row({
         >
           {previewUrl}
         </a>
-        <div className="mt-4">
-          <FaceCamCornerPicker
-            channelId={c.id}
-            current={(c.face_cam_corner ?? null) as FaceCamCorner}
-          />
-        </div>
+        {c.face_cam_corner ? (
+          <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            Cam corner · {c.face_cam_corner.replace("_", " ")}
+            <span className="text-mint"> · auto</span>
+          </p>
+        ) : (
+          <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            Cam corner · awaiting detection
+          </p>
+        )}
       </div>
       <form
         action={async () => {
