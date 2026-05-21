@@ -93,12 +93,26 @@ const config: Config = {
           "0%, 100%": { transform: "scale(1)", opacity: "1" },
           "50%": { transform: "scale(1.25)", opacity: "0.85" },
         },
+        // Hero headline underline draws in from the left on mount.
+        // Kept tiny on purpose — one tasteful WOW moment, not a parade.
+        "underline-draw": {
+          from: { transform: "scaleX(0)" },
+          to: { transform: "scaleX(1)" },
+        },
+        // Hero clip card subtle hover-lift (replaces the lifeless hairline
+        // border with one moment of physicality).
+        "fade-up": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "pulse-attribution": "pulse-attribution 2s ease-in-out infinite",
         "pulse-dot": "pulse-dot 2s ease-in-out infinite",
+        "underline-draw": "underline-draw 700ms cubic-bezier(0.65,0,0.35,1) 200ms both",
+        "fade-up": "fade-up 600ms cubic-bezier(0.16,1,0.3,1) 100ms both",
       },
     },
   },
