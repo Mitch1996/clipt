@@ -94,6 +94,10 @@ function Row({
               <Radio className="h-2.5 w-2.5 animate-pulse" />
               Live
             </span>
+          ) : !c.last_live_check ? (
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-accent">
+              Checking…
+            </span>
           ) : (
             <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               Offline

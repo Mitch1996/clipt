@@ -76,6 +76,26 @@ async function resolveTwitchUser(login: string): Promise<TwitchUser | null> {
   return body.data[0] ?? null;
 }
 
+const TWITCH_HELIX_STREAMS = "https://api.twitch.tv/helix/streams";
+
+async function fetchTwitchLiveStatus(userId: string): Promise<boolean> {
+  const token = await twitchAppToken();
+  const id = process.env.TWITCH_CLIENT_ID!;
+  const url = `${TWITCH_HELIX_STREAMS}?user_id=${encodeURIComponent(userId)}`;
+  try {
+    const res = await fetch(url, {
+      headers: { "Client-Id": id, Authorization: `Bearer ${token}` },
+      // Don't trust Next's default fetch cache — we want a live read.
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { data: unknown[] };
+    return (body.data ?? []).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export type AddWatchChannelResult =
   | { ok: true; channelId: string; platformUserId: string; platformLogin: string }
   | { ok: false; error: string };
@@ -141,6 +161,13 @@ export async function addWatchOnlyChannel(
     };
   }
 
+  // One-shot live-status check so the UI doesn't show a "Offline" badge
+  // for 30s after add (the scheduler tick interval) when the streamer
+  // is in fact live. Best-effort; on failure the worker scheduler
+  // catches up shortly anyway.
+  const isLiveNow = await fetchTwitchLiveStatus(twitchUser.id);
+  const nowIso = new Date().toISOString();
+
   const { data: inserted, error } = await admin
     .from("channels")
     .insert({
@@ -153,6 +180,9 @@ export async function addWatchOnlyChannel(
       // don't have an OAuth grant from the streamer yet.
       access_token_encrypted: "WATCH_ONLY",
       scopes: [],
+      is_live: isLiveNow,
+      last_live_check: nowIso,
+      last_live_at: isLiveNow ? nowIso : null,
     })
     .select("id")
     .single();
