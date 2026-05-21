@@ -142,6 +142,25 @@ export function ClipStatusLive({
       ? STEP_LABELS[step]
       : SUB_STATUS[status];
 
+  // Progress percentages — the actual times vary by clip length, but
+  // these are calibrated against typical 30s clips (download ~3s,
+  // transcribe ~30s on OpenAI, reframe ~30s on Fly perf-1x).
+  const progressByStep: Record<string, { pct: number; eta: string }> = {
+    "downloading-source": { pct: 12, eta: "~60s remaining" },
+    transcribing: { pct: 40, eta: "~40s remaining" },
+    reframing: { pct: 80, eta: "~15s remaining" },
+  };
+  const progress =
+    status === "pending"
+      ? { pct: 3, eta: "waiting for a worker" }
+      : status === "processing" && step && progressByStep[step]
+        ? progressByStep[step]
+        : status === "processing"
+          ? { pct: 50, eta: "" }
+          : status === "ready"
+            ? { pct: 100, eta: "" }
+            : null;
+
   const onRetry = async () => {
     setRetrying(true);
     const result = await retryClip(clipId);
@@ -171,11 +190,31 @@ export function ClipStatusLive({
         </div>
       </div>
 
-      {(status === "pending" || status === "processing") && (
-        <div className="mt-6 space-y-2">
+      {(status === "pending" || status === "processing") && progress && (
+        <div className="mt-6 space-y-4">
+          {/* Progress bar — sub-2s changes feel snappy thanks to the
+              transition; the % jumps in big steps because the actual
+              work isn't linear. */}
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between font-mono text-[11px] uppercase tracking-[0.14em]">
+              <span className="text-muted-foreground">
+                {progress.pct < 100 ? `${progress.pct}%` : "Done"}
+              </span>
+              {progress.eta ? (
+                <span className="text-muted-foreground tnum">{progress.eta}</span>
+              ) : null}
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full bg-accent transition-[width] duration-700 ease-out"
+                style={{ width: `${progress.pct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Visual cue while it's chewing — preview shimmer below the
+              progress bar. */}
           <Skeleton className="aspect-[9/16] max-h-[420px] w-full max-w-[260px]" />
-          <Skeleton className="h-3 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
         </div>
       )}
 

@@ -68,6 +68,23 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
     }),
   );
 
+  // Hero pick: most recent auto-detected hype-moment clip — that's the
+  // one with the biggest "wow they really caught my moment" punch. Fall
+  // back to the most recent ready clip of any source_kind.
+  const heroRow =
+    (clipRows ?? []).find((r) => r.source_kind === "live_auto") ??
+    (clipRows ?? [])[0] ??
+    null;
+  const heroVideoUrl = heroRow
+    ? await getSignedDownloadUrl(
+        heroRow.vertical_video_r2_key ?? StorageKeys.vertical(heroRow.id),
+        3600,
+      ).catch(() => null)
+    : null;
+  const heroThumbnailUrl = heroRow
+    ? clips.find((c) => c.id === heroRow.id)?.thumbnailUrl ?? null
+    : null;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
@@ -112,6 +129,53 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
           </div>
         ) : null}
 
+        {heroVideoUrl && heroRow ? (
+          <div className="mt-10 grid gap-8 md:grid-cols-[300px,1fr]">
+            <div className="relative mx-auto w-full max-w-[300px] overflow-hidden rounded-md border border-border bg-black md:mx-0">
+              <video
+                src={heroVideoUrl}
+                poster={heroThumbnailUrl ?? undefined}
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls
+                className="aspect-[9/16] w-full"
+              />
+              <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-foreground backdrop-blur-sm">
+                {heroRow.source_kind === "live_auto" ? "Auto-detected" : "Latest"}
+              </span>
+            </div>
+            <div className="flex flex-col justify-center">
+              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-accent">
+                We found this one
+              </span>
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.01em] md:text-3xl">
+                {heroRow.title ?? `Hype moment from @${channel.platform_username}`}
+              </h2>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Our chat-spike + audio-energy detector picked this out of
+                your stream{" "}
+                {heroRow.created_at
+                  ? new Date(heroRow.created_at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })
+                  : ""}
+                . Captioned, reframed to 9:16, signed with cryptographic
+                attribution that travels with the file.
+              </p>
+              <Link
+                href={`/c/${heroRow.id}`}
+                target="_blank"
+                className="mt-4 inline-flex w-fit items-center gap-1 font-mono text-[11px] uppercase tracking-[0.14em] text-foreground hover:text-accent"
+              >
+                Open the public clip page →
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
         {clips.length === 0 ? (
           <div className="mt-12 rounded-md border border-dashed border-border bg-card/40 p-8 text-center">
             <p className="text-sm text-muted-foreground">
@@ -123,10 +187,10 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
         ) : (
           <>
             <h2 className="mt-12 text-xl font-semibold tracking-[-0.01em]">
-              Your auto-generated clips
+              {heroRow ? "More clips from your stream" : "Your auto-generated clips"}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Tap any card to watch.
+              Tap any card to watch the full thing.
             </p>
             <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {clips.map((c) => (

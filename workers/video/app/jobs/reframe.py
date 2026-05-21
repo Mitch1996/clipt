@@ -111,13 +111,24 @@ TEXT_HEX = "#FFFFFF"
 # Bundled by `fonts-dejavu-core` in the Dockerfile.
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-# Stacked caption band: bigger font + tighter strokes since it has its
-# own dedicated zone instead of being squeezed at the bottom of the
-# frame.
-CAPTION_FONT_SIZE = 78
+# Viral-style captions: a tight karaoke window of words centred in the
+# band, the active word inside a bold coloured pill. Mirrors the
+# OpusClip / Streamladder / Captions.ai look that dominates TikTok +
+# Reels content. The font is big enough that the active word fills
+# most of the band's vertical space — readable on a 3" mobile screen
+# with the sound off.
+CAPTION_FONT_SIZE = 96
 CAPTION_LINE_GAP = 14
-CAPTION_MAX_WIDTH_RATIO = 0.88
-CAPTION_STROKE_WIDTH = 4
+CAPTION_MAX_WIDTH_RATIO = 0.92
+CAPTION_STROKE_WIDTH = 6
+# Number of words to show centred around the active one (active counted).
+# 3 means [w-1] [ACTIVE] [w+1]. 5 = a wider preview window.
+CAPTION_KARAOKE_WINDOW = 3
+# Pill padding around the active word backdrop.
+CAPTION_PILL_PAD_X = 22
+CAPTION_PILL_PAD_Y = 10
+CAPTION_PILL_RADIUS = 18
+CAPTION_WORD_GAP = 18  # pixels between rendered words
 # Used only by the legacy `style="centered"` renderer.
 CAPTION_BOTTOM_PAD = 220
 
@@ -915,10 +926,18 @@ def _burn_captions(
     band_y_start: int | None = None,
     band_y_end: int | None = None,
 ) -> None:
-    """Draw the active segment's caption with the current word
-    highlighted. When `band_y_start/end` is provided, the caption block
-    is vertically centred inside that band (stacked layout). Otherwise
-    it sits at the legacy bottom-third anchor."""
+    """OpusClip / Captions.ai-style "viral" caption layout.
+
+    Draws a tight karaoke window of ~3 words centred horizontally in the
+    band. The active word sits inside a bold yellow rounded pill with
+    black text; the surrounding words are white-with-stroke and slightly
+    dimmed. The window shifts as the active word advances so a viewer
+    always reads the current word + its immediate context.
+
+    When `band_y_start/end` is None we anchor at the legacy bottom-pad
+    (used by `style="centered"`); otherwise we centre vertically in the
+    given band.
+    """
     active_idx: int | None = None
     for i, w in enumerate(word_segments):
         if w["start"] <= t <= w["end"]:
@@ -938,41 +957,111 @@ def _burn_captions(
     if not seg_words:
         return
 
-    draw = ImageDraw.Draw(pil_img)
-    max_w = TARGET_W * CAPTION_MAX_WIDTH_RATIO
-    lines = _wrap_words(seg_words, font, draw, max_w)
-    line_h = font.getbbox("Hg")[3]
-    block_h = len(lines) * line_h + max(0, len(lines) - 1) * CAPTION_LINE_GAP
-
-    if band_y_start is not None and band_y_end is not None:
-        band_h = band_y_end - band_y_start
-        start_y = band_y_start + max(0, (band_h - block_h) // 2)
-    else:
-        start_y = TARGET_H - CAPTION_BOTTOM_PAD - block_h
-
+    # Find the active word's index inside its segment.
     active = word_segments[active_idx]
-    for li, line in enumerate(lines):
-        line_text = " ".join(w["text"] for w in line)
-        line_w = draw.textlength(line_text, font=font)
-        x = (TARGET_W - line_w) // 2
-        y = start_y + li * (line_h + CAPTION_LINE_GAP)
-        cursor = x
-        for w in line:
-            is_active = (
-                w["start"] == active["start"]
-                and w["end"] == active["end"]
-                and w["text"] == active["text"]
+    seg_active = next(
+        (i for i, w in enumerate(seg_words) if w is active),
+        None,
+    )
+    if seg_active is None:
+        # Fall back to text+timing match (Python identity loss after
+        # list comprehension would re-equal-but-not-is the dict).
+        seg_active = next(
+            (i for i, w in enumerate(seg_words) if w["start"] == active["start"] and w["text"] == active["text"]),
+            0,
+        )
+
+    # Build a karaoke window of words around the active one.
+    window = max(1, CAPTION_KARAOKE_WINDOW)
+    half = window // 2
+    start_i = max(0, seg_active - half)
+    end_i = min(len(seg_words), start_i + window)
+    # Re-balance leftward if we hit the right boundary.
+    start_i = max(0, end_i - window)
+    visible = seg_words[start_i:end_i]
+    if not visible:
+        return
+
+    draw = ImageDraw.Draw(pil_img)
+
+    # Measure each word using the live font.
+    measured: list[tuple[dict[str, Any], int, int, int]] = []
+    # (word, width, ascent_offset (top bbox y), height)
+    ascent_top = font.getbbox("Hg")[1]
+    line_h = font.getbbox("Hg")[3] - ascent_top
+    for w in visible:
+        # Uppercase for the punchy viral look.
+        text = w["text"].upper()
+        bw = int(draw.textlength(text, font=font))
+        measured.append((w, bw, ascent_top, line_h))
+
+    # Total horizontal extent — active word is the only one wrapped in
+    # a pill, so we account for its extra padding when computing the
+    # row width.
+    total_w = sum(m[1] for m in measured) + CAPTION_WORD_GAP * (len(measured) - 1)
+    # Pill for the active word adds horizontal padding.
+    active_in_window = seg_active - start_i
+    total_w += CAPTION_PILL_PAD_X * 2  # active word's pill padding
+
+    # Cap at the band's safe width — if the karaoke window is too wide,
+    # the active word + one neighbour suffices.
+    max_w = int(TARGET_W * CAPTION_MAX_WIDTH_RATIO)
+    while total_w > max_w and len(measured) > 1:
+        # Drop whichever side is farthest from the active word.
+        if active_in_window <= (len(measured) - 1) / 2:
+            removed = measured.pop()
+            total_w -= removed[1] + CAPTION_WORD_GAP
+        else:
+            removed = measured.pop(0)
+            total_w -= removed[1] + CAPTION_WORD_GAP
+            active_in_window -= 1
+
+    # Vertical placement: centre the line in the band.
+    pill_h = line_h + CAPTION_PILL_PAD_Y * 2
+    if band_y_start is not None and band_y_end is not None:
+        band_center_y = (band_y_start + band_y_end) // 2
+    else:
+        band_center_y = TARGET_H - CAPTION_BOTTOM_PAD - pill_h // 2
+    text_baseline_y = band_center_y - line_h // 2 - ascent_top
+
+    # Render. Walk the visible window left → right; the active word
+    # gets the yellow pill backdrop + black text; everything else is
+    # white-with-stroke.
+    cursor = (TARGET_W - total_w) // 2
+    for i, (w, bw, _atop, _h) in enumerate(measured):
+        text = w["text"].upper()
+        is_active = i == active_in_window
+        if is_active:
+            # Rounded pill backdrop.
+            pill_x0 = cursor - CAPTION_PILL_PAD_X
+            pill_y0 = band_center_y - pill_h // 2
+            pill_x1 = cursor + bw + CAPTION_PILL_PAD_X
+            pill_y1 = pill_y0 + pill_h
+            draw.rounded_rectangle(
+                (pill_x0, pill_y0, pill_x1, pill_y1),
+                radius=CAPTION_PILL_RADIUS,
+                fill=ACCENT_HEX,
             )
-            color = ACCENT_HEX if is_active else TEXT_HEX
             draw.text(
-                (cursor, y),
-                w["text"],
+                (cursor, text_baseline_y),
+                text,
                 font=font,
-                fill=color,
+                fill=(20, 20, 20),  # near-black on yellow
+            )
+            cursor += bw + CAPTION_PILL_PAD_X
+        else:
+            draw.text(
+                (cursor, text_baseline_y),
+                text,
+                font=font,
+                fill=TEXT_HEX,
                 stroke_width=CAPTION_STROKE_WIDTH,
                 stroke_fill=STROKE_HEX,
             )
-            cursor += draw.textlength(w["text"] + " ", font=font)
+            cursor += bw
+        # Inter-word gap.
+        if i < len(measured) - 1:
+            cursor += CAPTION_WORD_GAP
 
 
 def _wrap_words(
