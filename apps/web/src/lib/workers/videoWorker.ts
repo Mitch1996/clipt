@@ -126,6 +126,12 @@ export interface ReframeOut {
   thumbnailR2Key: string;
   width: number;
   height: number;
+  /** Which corner the auto-detector locked onto for this clip, or
+   * null when no corner cluster won (centred talking-head, or
+   * detection didn't find anything reliable). Callers should cache
+   * this back to channels.face_cam_corner so subsequent clips for
+   * the same channel skip detection and use the same preset. */
+  detectedCorner?: "top_left" | "top_right" | "bottom_left" | "bottom_right" | null;
 }
 export const callReframe = (input: ReframeIn) =>
   callWorker<ReframeIn, ReframeOut>("/jobs/reframe", input);

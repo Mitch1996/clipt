@@ -164,6 +164,12 @@ class ReframeOut(BaseModel):
     thumbnail_r2_key: str = Field(alias="thumbnailR2Key")
     width: int = TARGET_W
     height: int = TARGET_H
+    # Corner we ended up using for the cam crop. Lets the Next side
+    # cache the result back to `channels.face_cam_corner` so subsequent
+    # clips for the same channel reuse the same region — face cams in
+    # OBS don't move between clips. None means "non-corner cluster"
+    # (centred talking-head, or auto-detection didn't pick anything).
+    detected_corner: str | None = Field(default=None, alias="detectedCorner")
 
     model_config = {"populate_by_name": True}
 
@@ -201,7 +207,7 @@ def run(payload: ReframeIn) -> ReframeOut:
         #   - the corner preset on the streamer's channel row, OR
         #   - default top-right (most common OBS placement).
         cam_aspect = TARGET_W / CAM_BAND_H
-        cam_region = _resolve_locked_cam_region(
+        cam_region, detected_corner = _resolve_locked_cam_region(
             face_track=face_track,
             src_w=probe.width,
             src_h=probe.height,
@@ -209,8 +215,8 @@ def run(payload: ReframeIn) -> ReframeOut:
             target_aspect=cam_aspect,
         )
         log.info(
-            "reframe: rendering 1080x1920 mp4 (style=%s, cam_region=%s)",
-            payload.style, cam_region,
+            "reframe: rendering 1080x1920 mp4 (style=%s, detected_corner=%s, cam_region=%s)",
+            payload.style, detected_corner, cam_region,
         )
         _render_vertical(
             src_mp4=src_mp4,
@@ -235,6 +241,7 @@ def run(payload: ReframeIn) -> ReframeOut:
         return ReframeOut(
             verticalR2Key=keys["vertical_mp4"],
             thumbnailR2Key=keys["thumbnail_jpg"],
+            detectedCorner=detected_corner,
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -701,9 +708,11 @@ def _resolve_locked_cam_region(
     src_h: int,
     corner_hint: CornerHint,
     target_aspect: float,
-) -> tuple[int, int, int, int]:
+) -> tuple[tuple[int, int, int, int], str | None]:
     """Compute a single fixed (x0, y0, w, h) crop region for the cam
-    zone across the whole clip.
+    zone across the whole clip. Returns (region, detected_corner) — the
+    second slot tells the caller which named corner was used so it can
+    cache the result back to the channel row for subsequent clips.
 
     Order of preference:
       1. If `corner_hint` is set by the streamer, just use the preset.
@@ -714,10 +723,16 @@ def _resolve_locked_cam_region(
     """
     # 1. Explicit override always wins.
     if corner_hint:
-        return _corner_preset_region(corner_hint, src_w, src_h, target_aspect)
+        return (
+            _corner_preset_region(corner_hint, src_w, src_h, target_aspect),
+            corner_hint,
+        )
 
     if not face_track:
-        return _corner_preset_region("top_right", src_w, src_h, target_aspect)
+        return (
+            _corner_preset_region("top_right", src_w, src_h, target_aspect),
+            None,
+        )
 
     # 2. Cluster detections — but exclude the seeded DEFAULT_FACE
     # samples that carry forward when nothing was detected. We flag a
@@ -728,7 +743,10 @@ def _resolve_locked_cam_region(
     ]
     if not real_samples:
         log.info("reframe: no real face detections — using top_right preset")
-        return _corner_preset_region("top_right", src_w, src_h, target_aspect)
+        return (
+            _corner_preset_region("top_right", src_w, src_h, target_aspect),
+            None,
+        )
 
     # Bucket detections by 9-region quadrant.
     clusters: dict[str, list[FaceSample]] = {}
@@ -751,7 +769,10 @@ def _resolve_locked_cam_region(
         non_centre = [(k, v) for k, v in by_count if k != "mid_mid"]
         if not non_centre:
             log.info("reframe: only centre detections — using top_right preset")
-            return _corner_preset_region("top_right", src_w, src_h, target_aspect)
+            return (
+                _corner_preset_region("top_right", src_w, src_h, target_aspect),
+                None,
+            )
         dominant = non_centre[0][0]
 
     samples = clusters[dominant]
@@ -772,19 +793,22 @@ def _resolve_locked_cam_region(
         "bottom_right": "bottom_right",
     }
     if dominant in cluster_to_corner:
-        return _corner_preset_region(
-            cluster_to_corner[dominant], src_w, src_h, target_aspect,
+        corner = cluster_to_corner[dominant]
+        return (
+            _corner_preset_region(corner, src_w, src_h, target_aspect),
+            corner,
         )
 
     # Mid-edge clusters (top_mid, mid_left, etc.) — average the face
     # bbox in that region and crop tight. Catches off-corner / centred
-    # face cams.
+    # face cams. No corner name to cache.
     avg_x = sum(s[1] for s in samples) / len(samples)
     avg_y = sum(s[2] for s in samples) / len(samples)
     avg_w = sum(s[3] for s in samples) / len(samples)
     avg_h = sum(s[4] for s in samples) / len(samples)
-    return _cam_crop_box(
-        avg_x, avg_y, avg_w, avg_h, src_w, src_h, target_aspect,
+    return (
+        _cam_crop_box(avg_x, avg_y, avg_w, avg_h, src_w, src_h, target_aspect),
+        None,
     )
 
 

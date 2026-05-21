@@ -102,6 +102,21 @@ export const processCaptionEdit = inngest.createFunction(
       }),
     );
 
+    // Cache auto-detected corner back to the channel if not overridden.
+    if (
+      clip.source_channel_id &&
+      !faceCamCorner &&
+      reframed.detectedCorner
+    ) {
+      await step.run("cache-face-cam-corner", async () => {
+        await supabase
+          .from("channels")
+          .update({ face_cam_corner: reframed.detectedCorner })
+          .eq("id", clip.source_channel_id!)
+          .is("face_cam_corner", null);
+      });
+    }
+
     await step.run("persist-vertical", async () => {
       const { error } = await supabase
         .from("clips")

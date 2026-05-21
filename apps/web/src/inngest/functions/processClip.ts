@@ -287,6 +287,25 @@ export const processClip = inngest.createFunction(
       }),
     );
 
+    // Cache the auto-detected cam corner back to the channel if we
+    // don't already have one stored. Face cams are fixed in OBS, so
+    // the first successful detection should win for every subsequent
+    // clip on the same channel — eliminates the "detection wobble"
+    // where two clips a minute apart pick different regions.
+    if (
+      resolved.channelId &&
+      !faceCamCorner &&
+      reframed.detectedCorner
+    ) {
+      await step.run("cache-face-cam-corner", async () => {
+        await supabase
+          .from("channels")
+          .update({ face_cam_corner: reframed.detectedCorner })
+          .eq("id", resolved.channelId!)
+          .is("face_cam_corner", null); // never overwrite a manual override
+      });
+    }
+
     await step.run("persist-reframe-meta", async () => {
       const { error } = await supabase
         .from("clips")
