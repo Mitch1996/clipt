@@ -4,7 +4,12 @@ import { resolveLatestTwitchVod } from "@/features/channels/server/twitchVod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { callDetectFaceCam } from "@/lib/workers/videoWorker";
 
-import { ChannelAdded, inngest } from "../client";
+import { ChannelAdded, ClipCaptionsUpdated, inngest } from "../client";
+
+/** Keep in sync with RECENT_CLIPS_TO_RERENDER in setFaceCamCorner.ts —
+ * the manual + auto corner-update paths should re-render the same
+ * sliding window of recent clips. */
+const RECENT_CLIPS_TO_RERENDER = 5;
 
 /**
  * detectChannelCorner — pre-fills channels.face_cam_corner the moment
@@ -120,11 +125,39 @@ export const detectChannelCorner = inngest.createFunction(
         .is("face_cam_corner", null); // never overwrite a manual override
     });
 
+    // Re-render the channel's most recent ready clips with the new
+    // corner. processCaptionEdit reads face_cam_corner fresh on each
+    // run, so this catches existing clips up without a dedicated event.
+    const rerendered = await step.run("rerender-recent-clips", async () => {
+      const { data: rows } = await supabase
+        .from("clips")
+        .select("id")
+        .eq("source_channel_id", channelId)
+        .eq("status", "ready")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(RECENT_CLIPS_TO_RERENDER);
+      let fired = 0;
+      for (const row of rows ?? []) {
+        try {
+          await inngest.send({
+            name: ClipCaptionsUpdated.name,
+            data: { clipId: row.id },
+          });
+          fired += 1;
+        } catch (exc) {
+          console.warn("inngest re-render send failed:", exc);
+        }
+      }
+      return fired;
+    });
+
     return {
       channelId,
       corner: detected.corner,
       framesSampled: detected.framesSampled,
       vodId: vod.vodId,
+      rerendered,
     };
   },
 );

@@ -45,6 +45,12 @@ export function FaceCamCornerPicker({
       });
       return;
     }
+    if (result.rerendered > 0) {
+      toast({
+        title: "Saved · re-rendering recent clips",
+        description: `Queued ${result.rerendered} clip${result.rerendered === 1 ? "" : "s"} to re-render with the new corner. Refresh in ~30s.`,
+      });
+    }
     router.refresh();
   }
 

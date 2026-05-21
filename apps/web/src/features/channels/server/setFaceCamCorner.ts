@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { ChannelAdded, inngest } from "@/inngest/client";
+import { ChannelAdded, ClipCaptionsUpdated, inngest } from "@/inngest/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -20,10 +20,52 @@ const VALID_CORNERS: ReadonlyArray<Exclude<FaceCamCorner, null>> = [
   "bottom_right",
 ];
 
+/**
+ * How many of the channel's most-recent ready clips to auto re-render
+ * when their corner cache changes. Channel-level corner is OBS-fixed,
+ * so older clips would be wrong with the previous corner; we re-render
+ * a sliding window of the latest so the user sees existing clips
+ * catch up with the new pick.
+ */
+const RECENT_CLIPS_TO_RERENDER = 5;
+
+async function fireRerenderForRecentClips(
+  channelId: string,
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<number> {
+  // processCaptionEdit reads channels.face_cam_corner fresh on each
+  // run, then re-renders with the existing captions + attribution
+  // signature on the row. So firing clip/captions-updated against a
+  // ready clip is exactly "re-render this clip with the latest channel
+  // settings" without needing a dedicated event.
+  const { data: rows, error } = await admin
+    .from("clips")
+    .select("id")
+    .eq("source_channel_id", channelId)
+    .eq("status", "ready")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(RECENT_CLIPS_TO_RERENDER);
+  if (error || !rows?.length) return 0;
+  let fired = 0;
+  for (const row of rows) {
+    try {
+      await inngest.send({
+        name: ClipCaptionsUpdated.name,
+        data: { clipId: row.id },
+      });
+      fired += 1;
+    } catch (exc) {
+      console.warn("inngest re-render send failed:", exc);
+    }
+  }
+  return fired;
+}
+
 export async function setFaceCamCorner(
   channelId: string,
   corner: FaceCamCorner,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; rerendered: number } | { ok: false; error: string }> {
   if (corner !== null && !VALID_CORNERS.includes(corner)) {
     return { ok: false, error: "Invalid corner value" };
   }
@@ -40,7 +82,7 @@ export async function setFaceCamCorner(
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("channels")
-    .select("owner_id")
+    .select("owner_id, face_cam_corner")
     .eq("id", channelId)
     .maybeSingle();
   if (!row) return { ok: false, error: "Channel not found" };
@@ -52,9 +94,17 @@ export async function setFaceCamCorner(
     .eq("id", channelId);
   if (error) return { ok: false, error: error.message };
 
+  // If the corner actually changed (not just re-saving the same value),
+  // re-render the channel's most recent ready clips so existing renders
+  // catch up to the new cam region.
+  let rerendered = 0;
+  if (corner !== row.face_cam_corner && corner !== null) {
+    rerendered = await fireRerenderForRecentClips(channelId, admin);
+  }
+
   revalidatePath("/dashboard/channels");
   revalidatePath("/dashboard/admin/watch");
-  return { ok: true };
+  return { ok: true, rerendered };
 }
 
 /**
