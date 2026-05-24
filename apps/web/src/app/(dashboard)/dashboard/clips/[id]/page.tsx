@@ -5,12 +5,14 @@ import { Camera, Download, Film, Music2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { CamCornerEditor } from "@/features/clips/components/CamCornerEditor";
 import { CaptionEditor } from "@/features/clips/components/CaptionEditor";
 import { ClipMetaForm } from "@/features/clips/components/ClipMetaForm";
 import { ClipPlayer } from "@/features/clips/components/ClipPlayer";
 import { ClipStatusLive } from "@/features/clips/components/ClipStatusLive";
 import { DeleteClipDialog } from "@/features/clips/components/DeleteClipDialog";
 import { PublicLinkCopy } from "@/features/clips/components/PublicLinkCopy";
+import type { CamCorner } from "@/features/clips/server/setManualCorner";
 import {
   captionsJsonSchema,
   type CaptionsJson,
@@ -50,7 +52,7 @@ export default async function ClipDetailPage({
   const { data: clip } = await supabase
     .from("clips")
     .select(
-      "id, status, processing_step, processing_error, source_url, source_platform, source_kind, title, visibility, captions_json, vertical_video_r2_key, created_at",
+      "id, status, processing_step, processing_error, source_url, source_platform, source_kind, title, visibility, captions_json, vertical_video_r2_key, video_r2_key, face_cam_corner, face_cam_corner_source, created_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -65,6 +67,12 @@ export default async function ClipDetailPage({
   const thumbnailUrl = isReady
     ? await tryGetSignedUrl(StorageKeys.thumbnail(clip.id))
     : null;
+  // Source mp4 for the cam-corner editor. Only fetched when ready
+  // + we actually have the key on the row.
+  const sourceVideoUrl =
+    isReady && clip.video_r2_key
+      ? await tryGetSignedUrl(clip.video_r2_key)
+      : null;
 
   // Connected publish channels + existing posts.
   const { data: connectedChannelRows } = await supabase
@@ -152,6 +160,11 @@ export default async function ClipDetailPage({
           canPostTo={canPostTo}
           posts={posts}
           totalViews={totalViews}
+          sourceVideoUrl={sourceVideoUrl}
+          currentCorner={
+            (clip.face_cam_corner as CamCorner | null) ?? null
+          }
+          currentCornerSource={clip.face_cam_corner_source}
         />
       )}
     </div>
@@ -168,6 +181,9 @@ function ReadyEditor({
   canPostTo,
   posts,
   totalViews,
+  sourceVideoUrl,
+  currentCorner,
+  currentCornerSource,
 }: {
   clipId: string;
   title: string;
@@ -178,6 +194,9 @@ function ReadyEditor({
   canPostTo: Record<PublishPlatform, boolean>;
   posts: ClipPostRow[];
   totalViews: number;
+  sourceVideoUrl: string | null;
+  currentCorner: CamCorner | null;
+  currentCornerSource: string | null;
 }) {
   const publicUrl = `${APP_URL}/c/${clipId}`;
 
@@ -209,6 +228,17 @@ function ReadyEditor({
             initialVisibility={visibility}
           />
         </Section>
+
+        {sourceVideoUrl ? (
+          <Section title="Cam corner">
+            <CamCornerEditor
+              clipId={clipId}
+              sourceVideoUrl={sourceVideoUrl}
+              currentCorner={currentCorner}
+              currentSource={currentCornerSource}
+            />
+          </Section>
+        ) : null}
 
         <Section title="Captions">
           <CaptionEditor clipId={clipId} initialCaptions={captions} />
