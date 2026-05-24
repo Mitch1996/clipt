@@ -57,6 +57,236 @@ export type Database = {
           },
         ]
       }
+      brand_access_requests: {
+        Row: {
+          company_name: string
+          company_url: string | null
+          created_at: string
+          id: string
+          intended_use: string
+          profile_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewer_notes: string | null
+          status: string
+        }
+        Insert: {
+          company_name: string
+          company_url?: string | null
+          created_at?: string
+          id?: string
+          intended_use: string
+          profile_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_notes?: string | null
+          status?: string
+        }
+        Update: {
+          company_name?: string
+          company_url?: string | null
+          created_at?: string
+          id?: string
+          intended_use?: string
+          profile_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_notes?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_access_requests_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_access_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          allowed_platforms: string[]
+          brand_handle: string | null
+          brand_profile_id: string
+          brand_safety_tier: string
+          brief: string
+          budget_cents: number
+          cpm_cents: number
+          created_at: string
+          ends_at: string | null
+          geo: string[]
+          id: string
+          languages: string[]
+          max_per_clip_cents: number | null
+          niche: string
+          spent_cents: number
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          allowed_platforms?: string[]
+          brand_handle?: string | null
+          brand_profile_id: string
+          brand_safety_tier?: string
+          brief?: string
+          budget_cents?: number
+          cpm_cents?: number
+          created_at?: string
+          ends_at?: string | null
+          geo?: string[]
+          id?: string
+          languages?: string[]
+          max_per_clip_cents?: number | null
+          niche?: string
+          spent_cents?: number
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          allowed_platforms?: string[]
+          brand_handle?: string | null
+          brand_profile_id?: string
+          brand_safety_tier?: string
+          brief?: string
+          budget_cents?: number
+          cpm_cents?: number
+          created_at?: string
+          ends_at?: string | null
+          geo?: string[]
+          id?: string
+          languages?: string[]
+          max_per_clip_cents?: number | null
+          niche?: string
+          spent_cents?: number
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_brand_profile_id_fkey"
+            columns: ["brand_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_sources: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          id: string
+          position: number
+          source_url: string | null
+          source_video_r2_key: string | null
+          title: string | null
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          position?: number
+          source_url?: string | null
+          source_video_r2_key?: string | null
+          title?: string | null
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          position?: number
+          source_url?: string | null
+          source_video_r2_key?: string | null
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_sources_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_submissions: {
+        Row: {
+          approved_at: string | null
+          campaign_id: string
+          clip_id: string
+          clipper_profile_id: string
+          created_at: string
+          earned_cents: number
+          id: string
+          paid_at: string | null
+          reviewer_notes: string | null
+          status: string
+          updated_at: string
+          verified_views: number
+        }
+        Insert: {
+          approved_at?: string | null
+          campaign_id: string
+          clip_id: string
+          clipper_profile_id: string
+          created_at?: string
+          earned_cents?: number
+          id?: string
+          paid_at?: string | null
+          reviewer_notes?: string | null
+          status?: string
+          updated_at?: string
+          verified_views?: number
+        }
+        Update: {
+          approved_at?: string | null
+          campaign_id?: string
+          clip_id?: string
+          clipper_profile_id?: string
+          created_at?: string
+          earned_cents?: number
+          id?: string
+          paid_at?: string | null
+          reviewer_notes?: string | null
+          status?: string
+          updated_at?: string
+          verified_views?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_submissions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_submissions_clip_id_fkey"
+            columns: ["clip_id"]
+            isOneToOne: false
+            referencedRelation: "clips"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_submissions_clipper_profile_id_fkey"
+            columns: ["clipper_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channels: {
         Row: {
           access_token_encrypted: string | null
