@@ -1,5 +1,6 @@
-// NativeWind 4 ships its own babel preset; Expo Router needs Reanimated's
-// plugin (and it MUST be the last plugin in the list). Order matters.
+// NativeWind 4 ships its own babel preset; Reanimated 4 split the
+// babel plugin out into `react-native-worklets/plugin` (was
+// `react-native-reanimated/plugin` in v3). It MUST be the last plugin.
 module.exports = function (api) {
   api.cache(true);
   return {
@@ -8,8 +9,8 @@ module.exports = function (api) {
       "nativewind/babel",
     ],
     plugins: [
-      // Reanimated must be last.
-      "react-native-reanimated/plugin",
+      // Worklets plugin must be last.
+      "react-native-worklets/plugin",
     ],
   };
 };
