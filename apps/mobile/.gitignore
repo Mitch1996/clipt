@@ -1,0 +1,24 @@
+# Expo / RN
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Native build artifacts (we don't prebuild — Expo Go on dev, EAS on prod)
+ios/
+android/
+
+# Env
+.env
+.env.local
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS / Editor
+.DS_Store
+.idea/
+.vscode/

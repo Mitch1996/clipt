@@ -1,2 +1,10 @@
+# apps/mobile is intentionally EXCLUDED from the shared workspace. The
+# React 19 (web) + React 18 (RN 0.76) duality breaks pnpm's peer-dep
+# resolution for shadcn/radix when both apps share a lockfile — adding
+# mobile back here triggers a real-but-confusing JSX/ReactNode/ReactPortal
+# type error in apps/web that no version of @types/react fixes.
+# Mobile installs from inside its own directory with --ignore-workspace
+# (see apps/mobile/README.md).
 packages:
-  - "apps/*"
+  - "apps/web"
+  - "packages/*"
