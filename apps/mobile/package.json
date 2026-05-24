@@ -6,6 +6,8 @@
   "scripts": {
     "// node-options": "Node 24 enables experimental TS stripping by default, which breaks Expo's config loader when it tries to import expo-modules-core .ts source files from node_modules. --no-experimental-strip-types disables that.",
     "start": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start",
+    "// start:tunnel": "Use this when the PC + phone aren't on the same LAN (PC on ethernet/VPN, phone on Wi-Fi). Routes through Expo's proxy. First run prompts to install @expo/ngrok — answer y.",
+    "start:tunnel": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start --tunnel",
     "android": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start --android",
     "ios": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start --ios",
     "web": "cross-env NODE_OPTIONS=--no-experimental-strip-types expo start --web",
