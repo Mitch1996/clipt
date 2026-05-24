@@ -61,8 +61,9 @@ _VOD_OFFSETS_S = (60.0, 180.0, 300.0, 600.0, 1200.0, 1800.0, 2700.0)
 
 _PROMPT = """\
 You're looking at one frame from a Twitch livestream. The streamer
-typically has a small webcam widget showing their face overlaid in one
-corner of the screen, on top of their gameplay or content.
+MAY have a small webcam widget showing their face overlaid in one
+corner of the screen, on top of their gameplay or content. But some
+streamers don't show a cam at all.
 
 Identify which corner of THIS frame the face-camera widget sits in.
 Pick exactly one:
@@ -70,15 +71,59 @@ Pick exactly one:
   - "top_right"
   - "bottom_left"
   - "bottom_right"
-  - "none" — the cam fills the entire screen (talking-head streamer
-    with no game), there's no visible cam at all, the cam is centred
-    or non-corner, OR you're not confident.
+  - "none" — pick this whenever ANY of these are true:
+      • there's no visible cam at all (pure gameplay-only stream)
+      • the cam fills the entire screen (talking-head, no game)
+      • the cam is centred or mid-edge (not in a corner)
+      • you're not confident which corner the cam is in
 
-The cam is the rectangular widget with a human face inside it
-(usually a webcam-style framing, not a full-screen character). Game
-characters are NOT cams. UI elements (minimaps, indicators) are NOT
-cams.
+What COUNTS as a cam:
+  • A rectangular webcam-style frame containing a real human face
+  • An animated VTuber avatar in a similar widget
+  • Usually has a visible border, name overlay, or alert frame
+
+What does NOT count as a cam (return "none" instead of picking these):
+  • Minimaps (small map of the game world in a corner)
+  • Kill feeds / death notifications
+  • HUD elements: health bars, ammo counters, score displays
+  • In-game character portraits (Apex Legends panels, Overwatch hero icons)
+  • Inventory widgets, ability cooldown bars
+  • Stream alerts (subscriber pop-ups, donation banners)
+  • Chat overlays
+  • Game logos or watermarks
+
+When in doubt, return "none". A wrong corner pick produces a
+permanently broken render; "none" just means we try again later.
 """
+
+# Post-consensus confirmation prompt. After 7 votes pick a winner, we
+# crop that corner from a sample frame and ask the model to confirm
+# the crop is actually a webcam — catches "vision is confidently
+# wrong" failures that consensus alone won't fix.
+_CONFIRM_PROMPT = """\
+You're looking at a cropped region from a streamer's source video.
+Does this crop show a webcam widget — a rectangular frame containing
+a real human face OR an animated VTuber avatar?
+
+Answer "yes" only if you can clearly see a person (or VTuber model)
+inside a webcam-style framing.
+
+Answer "no" if the crop shows:
+  • Gameplay (game world, characters, action)
+  • A minimap or map overlay
+  • HUD elements (health, ammo, score, kill feed)
+  • A character portrait that is part of the game UI (not a separate
+    webcam widget)
+  • Anything else that isn't a webcam
+"""
+
+# Corner preset rectangle (matches reframe.py _corner_preset_region).
+# 22% wide × 27% tall, inset 2% from the edge. We use the same
+# numbers here so the confirmation crop matches what the renderer
+# would actually composite into the top band.
+_CAM_W_NORM = 0.22
+_CAM_H_NORM = 0.27
+_CAM_INSET = 0.02
 
 
 class DetectFaceCamIn(BaseModel):
@@ -149,6 +194,100 @@ def _extract_frames_from_url(
                 offset, url, (res.stderr or "")[:200],
             )
     return out
+
+
+def _crop_corner(
+    frame_path: str, corner: str, out_path: str,
+) -> bool:
+    """Pillow-crop the named corner region from a JPEG frame. Returns
+    True on success. Geometry mirrors reframe.py's _corner_preset_region
+    so what we send to the confirm step is exactly what the renderer
+    would composite into the top band."""
+    try:
+        from PIL import Image
+    except ImportError:
+        log.warning("detect-face-cam: Pillow unavailable, skipping confirm crop")
+        return False
+    try:
+        img = Image.open(frame_path)
+        w, h = img.size
+        cw = int(round(_CAM_W_NORM * w))
+        ch = int(round(_CAM_H_NORM * h))
+        inset_w = int(round(_CAM_INSET * w))
+        inset_h = int(round(_CAM_INSET * h))
+        if corner == "top_left":
+            box = (inset_w, inset_h, inset_w + cw, inset_h + ch)
+        elif corner == "top_right":
+            box = (w - inset_w - cw, inset_h, w - inset_w, inset_h + ch)
+        elif corner == "bottom_left":
+            box = (inset_w, h - inset_h - ch, inset_w + cw, h - inset_h)
+        elif corner == "bottom_right":
+            box = (w - inset_w - cw, h - inset_h - ch, w - inset_w, h - inset_h)
+        else:
+            return False
+        img.crop(box).save(out_path, "JPEG", quality=85)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("detect-face-cam: crop failed: %s", exc)
+        return False
+
+
+def _confirm_corner_is_cam(
+    client: OpenAI, crop_paths: list[str],
+) -> bool | None:
+    """One vision call with N corner crops. Asks: "is this a webcam?"
+    Returns True if any crop is confirmed as a webcam (we forgive a
+    single bad frame), False if all crops are confidently non-cam,
+    None on API failure (caller decides what to do)."""
+    contents: list[dict] = [{"type": "text", "text": _CONFIRM_PROMPT}]
+    for p in crop_paths:
+        try:
+            with open(p, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+        except OSError:
+            continue
+        contents.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{b64}",
+                "detail": "low",
+            },
+        })
+    if len(contents) < 2:
+        return None
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": contents}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "confirm_cam",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "is_webcam": {
+                                "type": "boolean",
+                            },
+                        },
+                        "required": ["is_webcam"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("detect-face-cam: confirm call failed: %s", exc)
+        return None
+
+    raw = response.choices[0].message.content or "{}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return bool(parsed.get("is_webcam"))
 
 
 def _vote_single_frame(client: OpenAI, frame_path: str) -> str | None:
@@ -275,13 +414,45 @@ def detect_face_cam(
             "top_left", "top_right", "bottom_left", "bottom_right",
         )
 
+        # Post-consensus confirmation. Catches "vision is confidently
+        # wrong" failures — e.g., a streamer with a minimap top-left
+        # where every frame votes top_left but the region isn't
+        # actually a webcam. We crop the winning corner from up to 3
+        # sample frames and ask the model "is this crop a webcam?".
+        # A consensus winner that fails confirmation gets demoted to
+        # None so per-clip detection retries on real clip frames
+        # rather than locking in a wrong answer.
+        confirmed = True
+        if meets_floor and is_corner:
+            confirm_paths: list[str] = []
+            for i, fp in enumerate(frame_paths[:3]):
+                cp = os.path.join(workdir, f"confirm-{i}.jpg")
+                if _crop_corner(fp, winner, cp):
+                    confirm_paths.append(cp)
+            if confirm_paths:
+                result = _confirm_corner_is_cam(client, confirm_paths)
+                if result is False:
+                    confirmed = False
+                    log.warning(
+                        "detect-face-cam: consensus winner=%s REJECTED by confirmation pass (crop is not a webcam)",
+                        winner,
+                    )
+                # result is None → API failure, trust the consensus
+                # rather than killing detection on a flaky external
+                # call. Same forgiveness as the per-frame vote path.
+
+        final_corner = (
+            winner if (meets_floor and is_corner and confirmed) else None
+        )
+
         log.info(
-            "detect-face-cam: mode=%s frames=%d votes=%s winner=%s confidence=%.2f consensus=%s",
-            mode, len(frame_paths), dict(tally), winner, confidence, meets_floor,
+            "detect-face-cam: mode=%s frames=%d votes=%s winner=%s confidence=%.2f consensus=%s confirmed=%s → %s",
+            mode, len(frame_paths), dict(tally), winner, confidence,
+            meets_floor, confirmed, final_corner,
         )
 
         return DetectFaceCamOut(
-            corner=winner if (meets_floor and is_corner) else None,
+            corner=final_corner,
             frames_sampled=len(frame_paths),
             votes=dict(tally),
             confidence=confidence,
