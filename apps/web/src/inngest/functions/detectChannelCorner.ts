@@ -92,6 +92,7 @@ export const detectChannelCorner = inngest.createFunction(
         // Already set (manual or prior detection); skip the call.
         return {
           corner: channel.face_cam_corner,
+          bbox: null as Record<string, number> | null,
           confidence: 1.0,
           framesSampled: 0,
           votes: {},
@@ -104,13 +105,14 @@ export const detectChannelCorner = inngest.createFunction(
         });
         return {
           corner: res.corner ?? null,
+          bbox: (res.bbox ?? null) as Record<string, number> | null,
           framesSampled: res.framesSampled ?? 0,
           confidence: res.confidence ?? 0,
           votes: res.votes ?? {},
         };
       } catch (err) {
         console.warn("detect-face-cam (vod) failed:", err);
-        return { corner: null, framesSampled: 0, confidence: 0, votes: {} };
+        return { corner: null, bbox: null, framesSampled: 0, confidence: 0, votes: {} };
       }
     });
 
@@ -140,13 +142,18 @@ export const detectChannelCorner = inngest.createFunction(
       const patch: {
         face_cam_corner?: string;
         face_cam_corner_confidence?: number;
+        face_cam_bbox?: Record<string, number>;
         is_vtuber?: boolean;
       } = {};
       // Never clobber an existing corner — guards against a race where
-      // two detection runs land at once.
+      // two detection runs land at once. The bbox piggybacks on the
+      // same write (only persisted when we just learned the corner).
       if (detected.corner && !channel.face_cam_corner) {
         patch.face_cam_corner = detected.corner;
         patch.face_cam_corner_confidence = detected.confidence;
+        if (detected.bbox) {
+          patch.face_cam_bbox = detected.bbox;
+        }
       }
       if (vtuber.isVtuber !== null && channel.is_vtuber === null) {
         patch.is_vtuber = vtuber.isVtuber;

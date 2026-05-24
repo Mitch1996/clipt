@@ -269,18 +269,21 @@ export const processClip = inngest.createFunction(
     // these. If either is null at this point we fall through to the
     // per-clip consensus detect on the actual source video.
     const channelState = await step.run("load-channel-state", async () => {
-      if (!resolved.channelId) return { corner: null, isVtuber: null };
+      if (!resolved.channelId)
+        return { corner: null, bbox: null, isVtuber: null };
       const { data } = await supabase
         .from("channels")
-        .select("face_cam_corner, is_vtuber")
+        .select("face_cam_corner, face_cam_bbox, is_vtuber")
         .eq("id", resolved.channelId)
         .maybeSingle();
       return {
         corner: data?.face_cam_corner ?? null,
+        bbox: (data?.face_cam_bbox as Record<string, number> | null) ?? null,
         isVtuber: data?.is_vtuber ?? null,
       };
     });
     let faceCamCorner = channelState.corner;
+    let faceCamBbox = channelState.bbox;
     let cornerSource: "vision" | "vod_predetect" | "reverify" | null =
       faceCamCorner ? "vod_predetect" : null;
     if (!faceCamCorner && resolved.channelId) {
@@ -291,23 +294,31 @@ export const processClip = inngest.createFunction(
           });
           return {
             corner: res.corner ?? null,
+            bbox: (res.bbox ?? null) as Record<string, number> | null,
             confidence: res.confidence ?? 0,
           };
         } catch (err) {
           console.warn("detect-face-cam failed:", err);
-          return { corner: null, confidence: 0 };
+          return { corner: null, bbox: null, confidence: 0 };
         }
       });
       if (detected.corner) {
         faceCamCorner = detected.corner;
+        if (detected.bbox) faceCamBbox = detected.bbox;
         cornerSource = "vision";
         await step.run("cache-vision-corner", async () => {
+          const patch: {
+            face_cam_corner: string;
+            face_cam_corner_confidence: number;
+            face_cam_bbox?: Record<string, number>;
+          } = {
+            face_cam_corner: detected.corner!,
+            face_cam_corner_confidence: detected.confidence,
+          };
+          if (detected.bbox) patch.face_cam_bbox = detected.bbox;
           await supabase
             .from("channels")
-            .update({
-              face_cam_corner: detected.corner,
-              face_cam_corner_confidence: detected.confidence,
-            })
+            .update(patch)
             .eq("id", resolved.channelId!)
             .is("face_cam_corner", null);
         });
@@ -324,6 +335,9 @@ export const processClip = inngest.createFunction(
         attributionToken,
         faceCamCorner: (faceCamCorner ?? undefined) as
           | "top_left" | "top_right" | "bottom_left" | "bottom_right"
+          | undefined,
+        faceCamBbox: (faceCamBbox ?? undefined) as
+          | { x: number; y: number; w: number; h: number }
           | undefined,
         isVtuber: channelState.isVtuber ?? undefined,
       }),
@@ -346,17 +360,32 @@ export const processClip = inngest.createFunction(
     }
 
     // Persist what got baked into THIS clip's mp4. The self-heal loop
-    // reads (face_cam_corner, verification_status) to decide which
-    // clips to invalidate when a corner gets falsified.
+    // reads (face_cam_corner, face_cam_bbox, verification_status) to
+    // decide which clips to invalidate when detection gets falsified.
     await step.run("persist-reframe-meta", async () => {
+      const update: {
+        vertical_video_r2_key: string;
+        face_cam_corner: string | null;
+        face_cam_corner_source: string | null;
+        verification_status: string;
+        face_cam_bbox?: Record<string, number>;
+        face_cam_bbox_source?: string;
+      } = {
+        vertical_video_r2_key: reframed.verticalR2Key,
+        face_cam_corner: faceCamCorner,
+        face_cam_corner_source: cornerSource,
+        verification_status: reframed.verificationStatus ?? "skipped",
+      };
+      // Stamp the bbox we actually cropped from + its source. We don't
+      // overwrite an existing per-clip override (manual edits stay).
+      if (reframed.usedBbox) {
+        update.face_cam_bbox = reframed.usedBbox;
+        update.face_cam_bbox_source =
+          reframed.usedBboxSource ?? "mediapipe_refine";
+      }
       const { error } = await supabase
         .from("clips")
-        .update({
-          vertical_video_r2_key: reframed.verticalR2Key,
-          face_cam_corner: faceCamCorner,
-          face_cam_corner_source: cornerSource,
-          verification_status: reframed.verificationStatus ?? "skipped",
-        })
+        .update(update)
         .eq("id", clipId);
       if (error) throw error;
     });

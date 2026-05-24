@@ -292,6 +292,7 @@ export type Database = {
           access_token_encrypted: string | null
           connected_at: string
           created_at: string
+          face_cam_bbox: Json | null
           face_cam_corner: string | null
           face_cam_corner_confidence: number | null
           id: string
@@ -313,6 +314,7 @@ export type Database = {
           access_token_encrypted?: string | null
           connected_at?: string
           created_at?: string
+          face_cam_bbox?: Json | null
           face_cam_corner?: string | null
           face_cam_corner_confidence?: number | null
           id?: string
@@ -334,6 +336,7 @@ export type Database = {
           access_token_encrypted?: string | null
           connected_at?: string
           created_at?: string
+          face_cam_bbox?: Json | null
           face_cam_corner?: string | null
           face_cam_corner_confidence?: number | null
           id?: string
@@ -430,6 +433,8 @@ export type Database = {
           deleted_at: string | null
           duration_seconds: number | null
           earnings_cents: number
+          face_cam_bbox: Json | null
+          face_cam_bbox_source: string | null
           face_cam_corner: string | null
           face_cam_corner_source: string | null
           id: string
@@ -461,6 +466,8 @@ export type Database = {
           deleted_at?: string | null
           duration_seconds?: number | null
           earnings_cents?: number
+          face_cam_bbox?: Json | null
+          face_cam_bbox_source?: string | null
           face_cam_corner?: string | null
           face_cam_corner_source?: string | null
           id?: string
@@ -492,6 +499,8 @@ export type Database = {
           deleted_at?: string | null
           duration_seconds?: number | null
           earnings_cents?: number
+          face_cam_bbox?: Json | null
+          face_cam_bbox_source?: string | null
           face_cam_corner?: string | null
           face_cam_corner_source?: string | null
           id?: string

@@ -67,6 +67,35 @@ export const selfHealCorner = inngest.createFunction(
       return data;
     });
 
+    // Was the failing clip rendered from a manual override? If so,
+    // the streamer's pick wins — we don't invalidate the channel
+    // cache or fan out re-renders that would override their
+    // selection. Instead we just stamp verification_status='failed'
+    // on this single clip so it surfaces in admin triage. Lets us
+    // catch genuine "manual pick is wrong" cases without the loop
+    // unilaterally overriding the human.
+    const triggerClip = await step.run("load-trigger-clip", async () => {
+      const { data } = await supabase
+        .from("clips")
+        .select("face_cam_bbox_source")
+        .eq("id", clipId)
+        .maybeSingle();
+      return data;
+    });
+    if (triggerClip?.face_cam_bbox_source === "manual") {
+      await step.run("mark-manual-failed-for-triage", async () => {
+        await supabase
+          .from("clips")
+          .update({ verification_status: "failed" })
+          .eq("id", clipId);
+      });
+      return {
+        clipId,
+        channelId,
+        skipped: "manual override — flagged for admin triage instead",
+      };
+    }
+
     // Guard against duplicate self-heal runs racing each other. If
     // the cache has already been replaced with a different corner
     // since the event was fired, someone else's re-detect won; we
@@ -79,12 +108,16 @@ export const selfHealCorner = inngest.createFunction(
       // steps but still fire fanout in case more clips need to catch
       // up.
     } else if (invalidatedCorner) {
-      await step.run("invalidate-channel-corner", async () => {
+      await step.run("invalidate-channel-corner-and-bbox", async () => {
+        // Null BOTH the corner and the bbox. The corner was wrong, so
+        // the bbox derived from it is also suspect; leaving the bbox
+        // would keep the next render anchored to the bad region.
         await supabase
           .from("channels")
           .update({
             face_cam_corner: null,
             face_cam_corner_confidence: null,
+            face_cam_bbox: null,
           })
           .eq("id", channelId)
           .eq("face_cam_corner", invalidatedCorner); // CAS-style: only clear if unchanged
@@ -95,10 +128,12 @@ export const selfHealCorner = inngest.createFunction(
       // single 30-second clip — better odds the consensus floor is
       // reached.
       const reverified = await step.run("re-detect-from-vod", async () => {
-        if (channel.platform !== "twitch") return { corner: null };
+        if (channel.platform !== "twitch") {
+          return { corner: null, bbox: null, confidence: 0 };
+        }
         try {
           const vod = await resolveLatestTwitchVod(channel.platform_user_id);
-          if (!vod) return { corner: null };
+          if (!vod) return { corner: null, bbox: null, confidence: 0 };
           const offsets = [60, 180, 300, 600, 1200, 1800, 2700]
             .filter((o) => o < vod.durationSec - 30)
             .slice(0, 7);
@@ -111,30 +146,39 @@ export const selfHealCorner = inngest.createFunction(
           });
           return {
             corner: res.corner ?? null,
+            bbox: (res.bbox ?? null) as Record<string, number> | null,
             confidence: res.confidence ?? 0,
           };
         } catch (err) {
           console.warn("self-heal: re-detect failed:", err);
-          return { corner: null };
+          return { corner: null, bbox: null, confidence: 0 };
         }
       });
 
-      // Persist the re-detected corner IF the consensus floor was met
-      // AND it's different from the invalidated one (a re-detect that
-      // produces the same wrong answer means the source can't
-      // disambiguate; we leave null and let per-clip detection retry
-      // on each clip's own frames).
+      // Persist the re-detected corner + bbox IF the consensus floor
+      // was met AND the corner is different from the invalidated one
+      // (a re-detect that produces the same wrong answer means the
+      // source can't disambiguate; we leave null + let per-clip
+      // detection retry on each clip's own frames).
       if (
         reverified.corner &&
         reverified.corner !== invalidatedCorner
       ) {
-        await step.run("persist-reverified-corner", async () => {
+        await step.run("persist-reverified-state", async () => {
+          const patch: {
+            face_cam_corner: string;
+            face_cam_corner_confidence: number;
+            face_cam_bbox?: Record<string, number>;
+          } = {
+            face_cam_corner: reverified.corner!,
+            face_cam_corner_confidence: reverified.confidence,
+          };
+          if (reverified.bbox) {
+            patch.face_cam_bbox = reverified.bbox;
+          }
           await supabase
             .from("channels")
-            .update({
-              face_cam_corner: reverified.corner,
-              face_cam_corner_confidence: reverified.confidence ?? null,
-            })
+            .update(patch)
             .eq("id", channelId)
             .is("face_cam_corner", null);
         });

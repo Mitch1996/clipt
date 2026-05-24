@@ -5,14 +5,14 @@ import { Camera, Download, Film, Music2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { CamCornerEditor } from "@/features/clips/components/CamCornerEditor";
+import { CamBboxEditor } from "@/features/clips/components/CamBboxEditor";
 import { CaptionEditor } from "@/features/clips/components/CaptionEditor";
 import { ClipMetaForm } from "@/features/clips/components/ClipMetaForm";
 import { ClipPlayer } from "@/features/clips/components/ClipPlayer";
 import { ClipStatusLive } from "@/features/clips/components/ClipStatusLive";
 import { DeleteClipDialog } from "@/features/clips/components/DeleteClipDialog";
 import { PublicLinkCopy } from "@/features/clips/components/PublicLinkCopy";
-import type { CamCorner } from "@/features/clips/server/setManualCorner";
+import type { CamBbox, CamCorner } from "@/features/clips/server/setBbox";
 import {
   captionsJsonSchema,
   type CaptionsJson,
@@ -52,7 +52,7 @@ export default async function ClipDetailPage({
   const { data: clip } = await supabase
     .from("clips")
     .select(
-      "id, status, processing_step, processing_error, source_url, source_platform, source_kind, title, visibility, captions_json, vertical_video_r2_key, video_r2_key, face_cam_corner, face_cam_corner_source, created_at",
+      "id, status, processing_step, processing_error, source_url, source_platform, source_kind, source_channel_id, title, visibility, captions_json, vertical_video_r2_key, video_r2_key, face_cam_corner, face_cam_corner_source, face_cam_bbox, face_cam_bbox_source, created_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -67,12 +67,23 @@ export default async function ClipDetailPage({
   const thumbnailUrl = isReady
     ? await tryGetSignedUrl(StorageKeys.thumbnail(clip.id))
     : null;
-  // Source mp4 for the cam-corner editor. Only fetched when ready
+  // Source mp4 for the cam-bbox editor. Only fetched when ready
   // + we actually have the key on the row.
   const sourceVideoUrl =
     isReady && clip.video_r2_key
       ? await tryGetSignedUrl(clip.video_r2_key)
       : null;
+  // Channel-default bbox — used as the editor's starting point when
+  // the clip has no override of its own.
+  const channelBbox = await (async (): Promise<CamBbox | null> => {
+    if (!clip.source_channel_id) return null;
+    const { data } = await supabase
+      .from("channels")
+      .select("face_cam_bbox")
+      .eq("id", clip.source_channel_id)
+      .maybeSingle();
+    return (data?.face_cam_bbox as CamBbox | null) ?? null;
+  })();
 
   // Connected publish channels + existing posts.
   const { data: connectedChannelRows } = await supabase
@@ -164,7 +175,9 @@ export default async function ClipDetailPage({
           currentCorner={
             (clip.face_cam_corner as CamCorner | null) ?? null
           }
-          currentCornerSource={clip.face_cam_corner_source}
+          currentBbox={(clip.face_cam_bbox as CamBbox | null) ?? null}
+          currentBboxSource={clip.face_cam_bbox_source}
+          channelBbox={channelBbox}
         />
       )}
     </div>
@@ -183,7 +196,9 @@ function ReadyEditor({
   totalViews,
   sourceVideoUrl,
   currentCorner,
-  currentCornerSource,
+  currentBbox,
+  currentBboxSource,
+  channelBbox,
 }: {
   clipId: string;
   title: string;
@@ -196,7 +211,9 @@ function ReadyEditor({
   totalViews: number;
   sourceVideoUrl: string | null;
   currentCorner: CamCorner | null;
-  currentCornerSource: string | null;
+  currentBbox: CamBbox | null;
+  currentBboxSource: string | null;
+  channelBbox: CamBbox | null;
 }) {
   const publicUrl = `${APP_URL}/c/${clipId}`;
 
@@ -230,12 +247,14 @@ function ReadyEditor({
         </Section>
 
         {sourceVideoUrl ? (
-          <Section title="Cam corner">
-            <CamCornerEditor
+          <Section title="Cam region">
+            <CamBboxEditor
               clipId={clipId}
               sourceVideoUrl={sourceVideoUrl}
+              currentBbox={currentBbox}
+              channelBbox={channelBbox}
               currentCorner={currentCorner}
-              currentSource={currentCornerSource}
+              currentSource={currentBboxSource}
             />
           </Section>
         ) : null}

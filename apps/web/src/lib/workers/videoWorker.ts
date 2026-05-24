@@ -111,6 +111,30 @@ export interface TranscribeOut {
 export const callTranscribe = (input: TranscribeIn) =>
   callWorker<TranscribeIn, TranscribeOut>("/jobs/transcribe", input);
 
+export type FaceCamCorner =
+  | "top_left"
+  | "top_right"
+  | "bottom_left"
+  | "bottom_right";
+
+/** Normalized 0..1 bounding box of the cam widget within the source
+ *  frame. Same shape stored on channels.face_cam_bbox + clips.face_cam_bbox. */
+export interface FaceCamBbox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Where a cam bbox came from. Drives self-heal-loop behaviour: a
+ *  'manual' bbox is never overwritten by re-detection. */
+export type FaceCamBboxSource =
+  | "vision"
+  | "mediapipe_refine"
+  | "manual"
+  | "channel_default"
+  | "preset_fallback";
+
 export interface ReframeIn {
   clipId: string;
   sourceR2Key: string;
@@ -118,11 +142,17 @@ export interface ReframeIn {
   style?: "default" | string;
   attributionToken?: string;
   creatorHandle?: string;
-  /** Channel-level cached corner passed straight through from
+  /** Coarse fallback for when no bbox is known. Same value as
    *  channels.face_cam_corner. */
   faceCamCorner?: FaceCamCorner;
+  /** Tight normalized cam-widget bbox. When supplied this is the
+   *  primary cropping primitive — the worker ignores `faceCamCorner`
+   *  and crops this exact rectangle (reshaped to the cam-band aspect).
+   *  Caller picks the right one to pass: clips.face_cam_bbox over
+   *  channels.face_cam_bbox. */
+  faceCamBbox?: FaceCamBbox;
   /** Whether the streamer uses a VTuber avatar. Drives which
-   *  post-render verification path runs. */
+   *  post-render verification path runs + skips MediaPipe refine. */
   isVtuber?: boolean;
 }
 export interface ReframeOut {
@@ -133,6 +163,13 @@ export interface ReframeOut {
   /** Which corner the worker's internal fallback locked onto for this
    *  clip (only set when faceCamCorner was NOT supplied). */
   detectedCorner?: FaceCamCorner | null;
+  /** The normalized bbox we actually cropped from for the cam band.
+   *  Stamped onto clips.face_cam_bbox by the caller so subsequent
+   *  renders reuse it. */
+  usedBbox?: FaceCamBbox | null;
+  /** Where the used bbox came from. Differentiates the self-heal
+   *  rules (manual stays, others get invalidated on verification fail). */
+  usedBboxSource?: FaceCamBboxSource | null;
   /** Post-render verification result. Drives whether processClip /
    *  processCaptionEdit marks the clip ready or kicks the self-heal
    *  loop. */
@@ -151,20 +188,18 @@ export interface DetectFaceCamIn {
   /** Override the default 7 sample offsets if needed. */
   sampleOffsetsSec?: number[];
 }
-export type FaceCamCorner =
-  | "top_left"
-  | "top_right"
-  | "bottom_left"
-  | "bottom_right";
 export interface DetectFaceCamOut {
   /** The consensus corner, or null when no corner reached the
    *  consensus floor (≥4 of 7 by default). */
   corner: FaceCamCorner | null;
+  /** Median bbox across votes that matched the winning corner.
+   *  Only populated when corner won consensus AND was confirmed. */
+  bbox?: FaceCamBbox | null;
   /** How many frames the model successfully scored. */
   framesSampled?: number;
   /** Per-corner vote counts (includes "none" votes). */
   votes?: Record<string, number>;
-  /** winner_votes / total_votes (0.0–1.0). */
+  /** winner_votes / total_votes (0.0-1.0). */
   confidence?: number;
 }
 export const callDetectFaceCam = (input: DetectFaceCamIn) =>

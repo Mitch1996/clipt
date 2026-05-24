@@ -156,11 +156,25 @@ class ReframeIn(BaseModel):
     # MediaPipe corner-cluster fallback that this worker has used since
     # day one. Self-correction loop sets this explicitly per-clip.
     face_cam_corner: str | None = Field(default=None, alias="faceCamCorner")
+    # Tight normalized {x,y,w,h} bbox of the actual cam widget. The
+    # primary cropping primitive — when supplied, the renderer ignores
+    # the corner and crops THIS rectangle. Priority order in
+    # _resolve_locked_cam_region:
+    #   1. clips.face_cam_bbox          (per-clip override / manual)
+    #   2. channels.face_cam_bbox       (channel cache, refined w/ this
+    #                                    clip's face track if available)
+    #   3. channels.face_cam_corner     (coarse fallback, _cam_crop_box
+    #                                    on face track inside that corner)
+    #   4. None                         (MediaPipe cluster, then preset)
+    face_cam_bbox: dict | None = Field(default=None, alias="faceCamBbox")
     # Whether the streamer uses an animated avatar (Live2D/VRoid/etc.)
     # instead of a real face cam. Drives which post-render verification
     # path runs:
     #   - False / None → MediaPipe face-detection on the rendered cam band
     #   - True         → second vision call asking "overlay or gameplay?"
+    # VTuber=True also skips the MediaPipe refinement of the channel
+    # bbox at render time — Live2D avatars don't trigger face detection,
+    # so the cached vision bbox is the best we'll get.
     is_vtuber: bool | None = Field(default=None, alias="isVtuber")
 
     model_config = {"populate_by_name": True}
@@ -175,6 +189,14 @@ class ReframeOut(BaseModel):
     # persist clips.face_cam_corner so the self-heal loop can invalidate
     # by (channel, corner) when verification fails.
     detected_corner: str | None = Field(default=None, alias="detectedCorner")
+    # The normalized bbox we actually cropped from for the cam band.
+    # The caller stamps this onto clips.face_cam_bbox (and, on first
+    # render, channels.face_cam_bbox) so subsequent renders reuse it.
+    used_bbox: dict | None = Field(default=None, alias="usedBbox")
+    # Where the used bbox came from. Lets the self-heal loop tell
+    # apart a manual override (don't touch) from a detected one
+    # (safe to invalidate).
+    used_bbox_source: str | None = Field(default=None, alias="usedBboxSource")
     # Post-render verification result. "passed"/"failed"/"skipped".
     # processClip / processCaptionEdit reads this and either marks the
     # clip ready (passed) or kicks the self-heal loop (failed).
@@ -214,23 +236,27 @@ def run(payload: ReframeIn) -> ReframeOut:
         face_track = _sample_face_track(src_mp4, probe, SAMPLE_FPS)
 
         # Resolve a single locked cam-crop region (in source pixels)
-        # for the whole clip. Streamers' face cams sit at a fixed OBS
-        # position; per-frame tracking just lets false positives bounce
-        # the crop around. The locked region is either:
-        #   - the dominant cluster of face detections, OR
-        #   - the corner preset on the streamer's channel row, OR
-        #   - default top-right (most common OBS placement).
+        # for the whole clip. Priority order (see ReframeIn docstring):
+        #   bbox override → channel bbox (+ MP refine) → corner → cluster.
+        # We also report back which path produced the box so the caller
+        # can stamp it onto the clip + know which cache invalidation
+        # rules apply on verification failure.
         cam_aspect = TARGET_W / CAM_BAND_H
-        cam_region, detected_corner = _resolve_locked_cam_region(
-            face_track=face_track,
-            src_w=probe.width,
-            src_h=probe.height,
-            corner_hint=payload.face_cam_corner,
-            target_aspect=cam_aspect,
+        cam_region, detected_corner, used_bbox, used_bbox_source = (
+            _resolve_locked_cam_region(
+                face_track=face_track,
+                src_w=probe.width,
+                src_h=probe.height,
+                corner_hint=payload.face_cam_corner,
+                bbox_hint=payload.face_cam_bbox,
+                is_vtuber=bool(payload.is_vtuber),
+                target_aspect=cam_aspect,
+            )
         )
         log.info(
-            "reframe: rendering 1080x1920 mp4 (style=%s, detected_corner=%s, cam_region=%s)",
+            "reframe: rendering 1080x1920 mp4 (style=%s, detected_corner=%s, cam_region=%s, used_bbox=%s, bbox_source=%s)",
             payload.style, detected_corner, cam_region,
+            used_bbox, used_bbox_source,
         )
         _render_vertical(
             src_mp4=src_mp4,
@@ -271,6 +297,8 @@ def run(payload: ReframeIn) -> ReframeOut:
             verticalR2Key=keys["vertical_mp4"],
             thumbnailR2Key=keys["thumbnail_jpg"],
             detectedCorner=detected_corner,
+            usedBbox=used_bbox,
+            usedBboxSource=used_bbox_source,
             verificationStatus=ver_status,
             verificationDetail=ver_detail,
         )
@@ -738,46 +766,114 @@ def _resolve_locked_cam_region(
     src_w: int,
     src_h: int,
     corner_hint: CornerHint,
+    bbox_hint: dict | None,
+    is_vtuber: bool,
     target_aspect: float,
-) -> tuple[tuple[int, int, int, int], str | None]:
+) -> tuple[tuple[int, int, int, int], str | None, dict | None, str | None]:
     """Compute a single fixed (x0, y0, w, h) crop region for the cam
-    zone across the whole clip. Returns (region, detected_corner) — the
-    second slot tells the caller which named corner was used so it can
-    cache the result back to the channel row for subsequent clips.
+    zone across the whole clip.
 
-    Order of preference:
-      1. If `corner_hint` is set by the streamer, just use the preset.
-      2. Cluster the face-track detections by quadrant. If a non-centre
-         cluster dominates AND has consistent positions, build a crop
-         from the average face there.
-      3. Fall back to the top-right preset (default OBS placement).
+    Returns (region, detected_corner, used_bbox_norm, bbox_source).
+
+    Priority order — every render goes through ONE of these branches.
+    The bbox-first ordering is the v2.7 change: cropping a tight,
+    streamer-specific rectangle beats a fixed 22%×27% preset for
+    every real layout (tiny WoW corner cams, big Apex cams, talking-
+    head streamers, VTubers). The corner is retained as a coarse
+    last-resort because it's still all we have on fresh channels.
+
+      1. clips.face_cam_bbox (per-clip override / streamer-edited /
+         prior render's stamp) — crop exactly that.
+      2. channels.face_cam_bbox (channel cache) — if a face landed
+         inside this region in the face track, refine to that face's
+         tight box; otherwise use the cached bbox as-is. VTubers skip
+         the refine because Live2D avatars don't trigger MediaPipe.
+      3. channels.face_cam_corner only — find face-track samples that
+         landed inside that corner quadrant; _cam_crop_box on their
+         median if any, else fall through to (4).
+      4. Nothing cached — current 9-quadrant MediaPipe cluster
+         behaviour, but route corner clusters through _cam_crop_box
+         on the cluster's face samples rather than the preset.
+      5. Last-resort preset rectangle when no face was ever detected.
     """
-    # 1. Explicit override always wins.
-    if corner_hint:
-        return (
-            _corner_preset_region(corner_hint, src_w, src_h, target_aspect),
-            corner_hint,
-        )
+    cam_aspect = target_aspect
 
+    # ── 1. Per-clip bbox override ──────────────────────────────────
+    if bbox_hint:
+        norm = _norm_bbox(bbox_hint)
+        if norm:
+            region = _cam_crop_from_norm_bbox(
+                norm, src_w, src_h, cam_aspect,
+            )
+            log.info("reframe: using per-clip bbox override %s", norm)
+            # The bbox source is the caller's concern — we just echo
+            # the bbox so it gets stamped onto the clip. The caller
+            # knows whether this came from clips.face_cam_bbox
+            # (source='manual' / 'vision' / etc.).
+            return (region, _corner_for_bbox(norm), norm, "channel_default")
+
+    # ── 2. Channel bbox + MediaPipe refine ────────────────────────
+    # No bbox_hint distinction here yet — the upstream caller passes
+    # the same bbox slot for both clip and channel. The refine kicks
+    # in when we have FACE detections inside the cached region AND
+    # the streamer isn't a VTuber.
+    # NOTE: the current call site only passes ONE bbox (clips or
+    # channels, whichever is set), so by the time we get here we've
+    # already taken branch 1. The bbox_hint != None case is handled
+    # above. If a future caller wants distinct channel vs clip
+    # handling, split the hint into two args + add branch 2 here.
+
+    # ── 3. Channel corner only ────────────────────────────────────
+    if corner_hint and corner_hint in (
+        "top_left", "top_right", "bottom_left", "bottom_right",
+    ):
+        # Filter face track to samples that landed inside the corner
+        # quadrant. If MediaPipe found a face there, _cam_crop_box on
+        # the median is tighter than the preset.
+        corner_samples = [
+            s for s in face_track
+            if (s[3], s[4]) != (DEFAULT_FACE[2], DEFAULT_FACE[3])
+            and _classify_quadrant(s[1], s[2]) == corner_hint
+        ]
+        if corner_samples and not is_vtuber:
+            avg_x = sum(s[1] for s in corner_samples) / len(corner_samples)
+            avg_y = sum(s[2] for s in corner_samples) / len(corner_samples)
+            avg_w = sum(s[3] for s in corner_samples) / len(corner_samples)
+            avg_h = sum(s[4] for s in corner_samples) / len(corner_samples)
+            region = _cam_crop_box(
+                avg_x, avg_y, avg_w, avg_h,
+                src_w, src_h, cam_aspect,
+            )
+            norm = _region_to_norm(region, src_w, src_h)
+            log.info(
+                "reframe: corner=%s + face track refine → region=%s",
+                corner_hint, region,
+            )
+            return (region, corner_hint, norm, "mediapipe_refine")
+        # No face in the corner OR avatar streamer — use the preset.
+        region = _corner_preset_region(
+            corner_hint, src_w, src_h, cam_aspect,
+        )
+        norm = _region_to_norm(region, src_w, src_h)
+        log.info(
+            "reframe: corner=%s preset (no face track refine, vtuber=%s)",
+            corner_hint, is_vtuber,
+        )
+        return (region, corner_hint, norm, "preset_fallback")
+
+    # ── 4. MediaPipe cluster fallback (no corner cached either) ───
     if not face_track:
-        return (
-            _corner_preset_region("top_right", src_w, src_h, target_aspect),
-            None,
-        )
+        region = _corner_preset_region("top_right", src_w, src_h, cam_aspect)
+        return (region, None, _region_to_norm(region, src_w, src_h), "preset_fallback")
 
-    # 2. Cluster detections — but exclude the seeded DEFAULT_FACE
-    # samples that carry forward when nothing was detected. We flag a
-    # "real" sample as one whose bbox dimensions differ from DEFAULT_FACE.
     real_samples = [
         s for s in face_track
         if (s[3], s[4]) != (DEFAULT_FACE[2], DEFAULT_FACE[3])
     ]
     if not real_samples:
         log.info("reframe: no real face detections — using top_right preset")
-        return (
-            _corner_preset_region("top_right", src_w, src_h, target_aspect),
-            None,
-        )
+        region = _corner_preset_region("top_right", src_w, src_h, cam_aspect)
+        return (region, None, _region_to_norm(region, src_w, src_h), "preset_fallback")
 
     # Bucket detections by 9-region quadrant.
     clusters: dict[str, list[FaceSample]] = {}
@@ -785,9 +881,6 @@ def _resolve_locked_cam_region(
         q = _classify_quadrant(s[1], s[2])
         clusters.setdefault(q, []).append(s)
 
-    # Pick the most populous non-centre cluster. If centre is more
-    # populous than every corner combined, accept it (talking-head
-    # streamer with no game).
     by_count = sorted(clusters.items(), key=lambda kv: len(kv[1]), reverse=True)
     centre_count = len(clusters.get("mid_mid", []))
     non_centre_total = sum(
@@ -796,51 +889,99 @@ def _resolve_locked_cam_region(
     if centre_count > non_centre_total * 1.5:
         dominant = "mid_mid"
     else:
-        # Skip mid_mid, take the largest corner-ish cluster.
         non_centre = [(k, v) for k, v in by_count if k != "mid_mid"]
         if not non_centre:
             log.info("reframe: only centre detections — using top_right preset")
-            return (
-                _corner_preset_region("top_right", src_w, src_h, target_aspect),
-                None,
-            )
+            region = _corner_preset_region("top_right", src_w, src_h, cam_aspect)
+            return (region, None, _region_to_norm(region, src_w, src_h), "preset_fallback")
         dominant = non_centre[0][0]
 
     samples = clusters[dominant]
-    log.info(
-        "reframe: locked region from cluster %s (n=%d)", dominant, len(samples),
+    avg_x = sum(s[1] for s in samples) / len(samples)
+    avg_y = sum(s[2] for s in samples) / len(samples)
+    avg_w = sum(s[3] for s in samples) / len(samples)
+    avg_h = sum(s[4] for s in samples) / len(samples)
+    region = _cam_crop_box(
+        avg_x, avg_y, avg_w, avg_h, src_w, src_h, cam_aspect,
     )
+    norm = _region_to_norm(region, src_w, src_h)
 
-    # If the dominant cluster is in a corner, use the standard OBS-shaped
-    # corner preset rectangle — it's a much more reliable size for a
-    # face cam than the dynamically-sized bbox from MediaPipe (which
-    # includes head + some surrounding hair/background and varies frame
-    # to frame). The corner preset gives a predictable, OpusClip-style
-    # cam zone every time.
     cluster_to_corner = {
         "top_left": "top_left",
         "top_right": "top_right",
         "bottom_left": "bottom_left",
         "bottom_right": "bottom_right",
     }
-    if dominant in cluster_to_corner:
-        corner = cluster_to_corner[dominant]
-        return (
-            _corner_preset_region(corner, src_w, src_h, target_aspect),
-            corner,
-        )
-
-    # Mid-edge clusters (top_mid, mid_left, etc.) — average the face
-    # bbox in that region and crop tight. Catches off-corner / centred
-    # face cams. No corner name to cache.
-    avg_x = sum(s[1] for s in samples) / len(samples)
-    avg_y = sum(s[2] for s in samples) / len(samples)
-    avg_w = sum(s[3] for s in samples) / len(samples)
-    avg_h = sum(s[4] for s in samples) / len(samples)
-    return (
-        _cam_crop_box(avg_x, avg_y, avg_w, avg_h, src_w, src_h, target_aspect),
-        None,
+    log.info(
+        "reframe: cluster=%s → region=%s (n=%d)", dominant, region, len(samples),
     )
+    return (
+        region,
+        cluster_to_corner.get(dominant),
+        norm,
+        "mediapipe_refine",
+    )
+
+
+def _norm_bbox(bbox: dict) -> dict | None:
+    """Coerce + sanity-check a normalized bbox passed in from the
+    caller. Returns None when the bbox is unusable (off-frame, zero
+    area, missing keys); the caller falls back to corner/cluster."""
+    try:
+        x = float(bbox.get("x", 0))
+        y = float(bbox.get("y", 0))
+        w = float(bbox.get("w", 0))
+        h = float(bbox.get("h", 0))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    x = max(0.0, min(1.0, x))
+    y = max(0.0, min(1.0, y))
+    w = max(0.0, min(1.0 - x, w))
+    h = max(0.0, min(1.0 - y, h))
+    if w * h <= 0.0009:
+        return None
+    return {"x": x, "y": y, "w": w, "h": h}
+
+
+def _cam_crop_from_norm_bbox(
+    norm: dict, src_w: int, src_h: int, target_aspect: float,
+) -> tuple[int, int, int, int]:
+    """Crop a normalized bbox out of the source. Translates to source
+    pixels + reshapes to the cam-band aspect via _cam_crop_box (so
+    the box centre stays put but width/height grow/shrink to match
+    the target 1080×920)."""
+    cx = (norm["x"] + norm["w"] / 2)
+    cy = (norm["y"] + norm["h"] / 2)
+    return _cam_crop_box(
+        cx, cy, norm["w"], norm["h"], src_w, src_h, target_aspect,
+    )
+
+
+def _region_to_norm(
+    region: tuple[int, int, int, int], src_w: int, src_h: int,
+) -> dict:
+    """Source-pixel region → normalized {x,y,w,h}. Used to report
+    `usedBbox` back to the caller for stamping."""
+    x0, y0, w, h = region
+    return {
+        "x": x0 / max(src_w, 1),
+        "y": y0 / max(src_h, 1),
+        "w": w / max(src_w, 1),
+        "h": h / max(src_h, 1),
+    }
+
+
+def _corner_for_bbox(norm: dict) -> str | None:
+    """Best-effort: which corner does the bbox's centre fall into?
+    Used to fill `detectedCorner` when we have a bbox but no corner
+    hint (so the caller can still cache a corner alongside the bbox
+    for the self-heal loop to key off)."""
+    cx = norm["x"] + norm["w"] / 2
+    cy = norm["y"] + norm["h"] / 2
+    q = _classify_quadrant(cx, cy)
+    if q in ("top_left", "top_right", "bottom_left", "bottom_right"):
+        return q
+    return None
 
 
 # ─── Stacked-layout composer ──────────────────────────────────────────

@@ -65,24 +65,34 @@ MAY have a small webcam widget showing their face overlaid in one
 corner of the screen, on top of their gameplay or content. But some
 streamers don't show a cam at all.
 
-Identify which corner of THIS frame the face-camera widget sits in.
-Pick exactly one:
-  - "top_left"
-  - "top_right"
-  - "bottom_left"
-  - "bottom_right"
-  - "none" — pick this whenever ANY of these are true:
-      • there's no visible cam at all (pure gameplay-only stream)
-      • the cam fills the entire screen (talking-head, no game)
-      • the cam is centred or mid-edge (not in a corner)
-      • you're not confident which corner the cam is in
+Return two things about THIS frame:
+
+1. `corner` — which corner the cam is in. Pick exactly one:
+     - "top_left"
+     - "top_right"
+     - "bottom_left"
+     - "bottom_right"
+     - "none" — no visible cam OR cam fills the screen OR cam is
+       centred / mid-edge OR you're not confident.
+
+2. `bbox` — the TIGHTEST rectangle around the webcam widget's content
+   area (not the chrome/border, the actual region containing the
+   streamer's face), as normalized 0..1 coordinates of the frame.
+   Fields: { x, y, w, h } where x,y is the top-left of the box.
+
+   When `corner` is "none", return {"x":0,"y":0,"w":0,"h":0}.
+
+   Be tight. A WoW corner cam is typically ~8% × 12% of the source.
+   An Apex cam is ~15% × 20%. Don't include the OBS chrome, name
+   tag overlay, or surrounding gameplay — just the rectangle the
+   streamer's face actually occupies.
 
 What COUNTS as a cam:
   • A rectangular webcam-style frame containing a real human face
   • An animated VTuber avatar in a similar widget
   • Usually has a visible border, name overlay, or alert frame
 
-What does NOT count as a cam (return "none" instead of picking these):
+What does NOT count as a cam (return "none" + zero bbox):
   • Minimaps (small map of the game world in a corner)
   • Kill feeds / death notifications
   • HUD elements: health bars, ammo counters, score displays
@@ -139,6 +149,13 @@ class DetectFaceCamOut(BaseModel):
     corner: str | None
     """One of `top_left`/`top_right`/`bottom_left`/`bottom_right`,
     or None when no corner reached the consensus floor."""
+
+    bbox: dict | None = None
+    """Median bbox across votes that matched the winning corner,
+    normalized 0..1 of source. Only populated when corner won
+    consensus AND was confirmed. {x,y,w,h}. None when corner is None
+    or confirmation failed — caller falls back to the corner preset
+    rectangle."""
 
     frames_sampled: int = Field(default=0, alias="framesSampled")
     """How many frames the model successfully scored."""
@@ -290,10 +307,19 @@ def _confirm_corner_is_cam(
     return bool(parsed.get("is_webcam"))
 
 
-def _vote_single_frame(client: OpenAI, frame_path: str) -> str | None:
-    """One independent vision call per frame. Returns the corner the
-    model picked for THIS frame in isolation, or None if the response
-    was malformed."""
+def _vote_single_frame(
+    client: OpenAI, frame_path: str,
+) -> tuple[str, dict | None] | None:
+    """One independent vision call per frame. Returns `(corner, bbox)`
+    where bbox is `{x,y,w,h}` normalized 0..1 of the source — None
+    when the model returned "none" (no cam) so the caller can drop
+    the bbox component from consensus aggregation. Returns None
+    outright when the API call or parse fails.
+
+    Both `corner` and `bbox` come from a SINGLE model call (one JSON
+    object). Asking for them together is ~30 extra output tokens and
+    no extra round-trip; cost-neutral.
+    """
     with open(frame_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     try:
@@ -326,8 +352,19 @@ def _vote_single_frame(client: OpenAI, frame_path: str) -> str | None:
                                 "type": "string",
                                 "enum": list(_CORNERS),
                             },
+                            "bbox": {
+                                "type": "object",
+                                "properties": {
+                                    "x": {"type": "number"},
+                                    "y": {"type": "number"},
+                                    "w": {"type": "number"},
+                                    "h": {"type": "number"},
+                                },
+                                "required": ["x", "y", "w", "h"],
+                                "additionalProperties": False,
+                            },
                         },
-                        "required": ["corner"],
+                        "required": ["corner", "bbox"],
                         "additionalProperties": False,
                     },
                 },
@@ -346,7 +383,40 @@ def _vote_single_frame(client: OpenAI, frame_path: str) -> str | None:
     corner = parsed.get("corner")
     if corner not in _CORNERS:
         return None
-    return corner
+    raw_bbox = parsed.get("bbox") or {}
+    # "none"-corner votes are intentionally bbox-less for consensus.
+    # Real corner votes with a zero-area bbox are treated as no bbox
+    # too — model couldn't / wouldn't draw it.
+    if corner == "none":
+        return (corner, None)
+    bbox = _coerce_bbox(raw_bbox)
+    return (corner, bbox)
+
+
+def _coerce_bbox(raw: dict) -> dict | None:
+    """Clamp + validate a vision-returned bbox into a sane shape.
+    Returns None when the box is unusable (zero area, off-frame,
+    obviously bogus); the caller falls back to the corner preset."""
+    try:
+        x = float(raw.get("x", 0))
+        y = float(raw.get("y", 0))
+        w = float(raw.get("w", 0))
+        h = float(raw.get("h", 0))
+    except (TypeError, ValueError):
+        return None
+    # Clamp into the unit square; reject if effectively zero or
+    # bigger than 85% of the frame (almost certainly the model
+    # claiming the whole frame is the cam, which the prompt told
+    # it to flag as "none").
+    x = max(0.0, min(1.0, x))
+    y = max(0.0, min(1.0, y))
+    w = max(0.0, min(1.0 - x, w))
+    h = max(0.0, min(1.0 - y, h))
+    if w * h <= 0.001:
+        return None
+    if w * h > 0.85:
+        return None
+    return {"x": x, "y": y, "w": w, "h": h}
 
 
 @router.post("/jobs/detect-face-cam", response_model=DetectFaceCamOut)
@@ -390,18 +460,21 @@ def detect_face_cam(
             return DetectFaceCamOut(corner=None, frames_sampled=0)
 
         # Run one vision call per frame. Independent calls → errors
-        # decorrelate. Cost: 7 × $0.0025 ≈ $0.018 per detection.
+        # decorrelate. Cost: 7 × $0.0025 ≈ $0.018 per detection. Each
+        # vote now also brings a per-frame bbox, which we aggregate
+        # after the corner tally.
         client = OpenAI(api_key=api_key)
-        votes: list[str] = []
+        raw_votes: list[tuple[str, dict | None]] = []
         for fp in frame_paths:
             v = _vote_single_frame(client, fp)
             if v is not None:
-                votes.append(v)
+                raw_votes.append(v)
 
-        if not votes:
+        if not raw_votes:
             log.warning("detect-face-cam: no successful votes (mode=%s)", mode)
             return DetectFaceCamOut(corner=None, frames_sampled=0)
 
+        votes = [c for (c, _) in raw_votes]
         tally = Counter(votes)
         winner, winner_votes = tally.most_common(1)[0]
         confidence = winner_votes / len(votes)
@@ -445,17 +518,81 @@ def detect_face_cam(
             winner if (meets_floor and is_corner and confirmed) else None
         )
 
+        # Bbox aggregation. Take the bboxes from votes that matched
+        # the winning corner, drop outliers, return the component-wise
+        # median. We only return a bbox when the corner consensus +
+        # confirmation BOTH passed — otherwise the caller has nothing
+        # to anchor on and would be applying a noisy box.
+        final_bbox: dict | None = None
+        if final_corner is not None:
+            winner_bboxes = [
+                b for (c, b) in raw_votes if c == winner and b is not None
+            ]
+            final_bbox = _aggregate_bboxes(winner_bboxes)
+
         log.info(
-            "detect-face-cam: mode=%s frames=%d votes=%s winner=%s confidence=%.2f consensus=%s confirmed=%s → %s",
+            "detect-face-cam: mode=%s frames=%d votes=%s winner=%s confidence=%.2f consensus=%s confirmed=%s bbox=%s → %s",
             mode, len(frame_paths), dict(tally), winner, confidence,
-            meets_floor, confirmed, final_corner,
+            meets_floor, confirmed, final_bbox, final_corner,
         )
 
         return DetectFaceCamOut(
             corner=final_corner,
+            bbox=final_bbox,
             frames_sampled=len(frame_paths),
             votes=dict(tally),
             confidence=confidence,
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _aggregate_bboxes(boxes: list[dict]) -> dict | None:
+    """Component-wise median of the bboxes, after dropping outliers
+    that sit more than 1.5×IQR from the median on any axis. With 4+
+    samples agreeing on the corner, this is robust to the occasional
+    frame where the model returned a wild box (e.g. on a loading
+    screen). With fewer samples we just take the median directly —
+    1.5×IQR isn't meaningful with n<4 and dropping data would hurt
+    more than the outlier."""
+    if not boxes:
+        return None
+
+    if len(boxes) < 4:
+        return _component_median(boxes)
+
+    # Filter per-axis. Re-using the IQR per axis means we keep boxes
+    # that are good on most axes; we only reject the truly bad ones.
+    survivors = list(boxes)
+    for axis in ("x", "y", "w", "h"):
+        values = sorted(b[axis] for b in survivors)
+        n = len(values)
+        if n < 4:
+            break
+        q1 = values[n // 4]
+        q3 = values[(3 * n) // 4]
+        iqr = q3 - q1
+        if iqr <= 0:
+            continue
+        lo = q1 - 1.5 * iqr
+        hi = q3 + 1.5 * iqr
+        survivors = [b for b in survivors if lo <= b[axis] <= hi]
+        if not survivors:
+            # All boxes ended up flagged; fall back to the unfiltered
+            # median rather than returning None.
+            return _component_median(boxes)
+    return _component_median(survivors)
+
+
+def _component_median(boxes: list[dict]) -> dict:
+    """Plain per-axis median. Caller has already filtered outliers."""
+    def med(vs: list[float]) -> float:
+        s = sorted(vs)
+        n = len(s)
+        return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+    return {
+        "x": med([b["x"] for b in boxes]),
+        "y": med([b["y"] for b in boxes]),
+        "w": med([b["w"] for b in boxes]),
+        "h": med([b["h"] for b in boxes]),
+    }
